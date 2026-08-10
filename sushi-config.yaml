@@ -1,0 +1,35 @@
+id: cms-aligned-network-ig
+canonical: http://example.org/fhir/ig/cms-aligned-network-ig
+name: CMSAlignedNetworkIG
+title: CMS-Aligned Network Implementation Guide
+description: Scaffolding for publishing a CMS-aligned network implementation guide starting with Individual Access Services.
+status: draft
+version: 0.1.0
+fhirVersion: 4.0.1
+copyrightYear: 2026+
+releaseLabel: draft
+
+pages:
+  index.md:
+    title: Home
+  registration.md:
+    title: Registration
+  statements-on-identity.md:
+    title: Identity and Patient Matching
+  rls-patient-discovery.md:
+    title: RLS and Patient Discovery
+  getting-access-token.md:
+    title: Getting an Access Token
+  end-to-end-narrative.md:
+    title: End to End Example
+  artifacts.md:
+    title: Artifacts Index
+
+menu:
+  Home: index.html
+  Registration: registration.html
+  Identity and Patient Matching: statements-on-identity.html
+  RLS and Patient Discovery: rls-patient-discovery.html
+  Getting an Access Token: getting-access-token.html
+  End to End Example: end-to-end-narrative.html
+  Artifacts: artifacts.html

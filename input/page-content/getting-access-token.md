@@ -1,0 +1,279 @@
+# Getting an Access Token
+
+This section specifies the technical architecture, protocol requirements, and operational expectations for Client Applications to redeem SMART Permission Tickets for OAuth 2.0 access tokens when requesting Individual Access Services (IAS) from Data Holders within a CMS-aligned network.
+
+---
+
+## 1. Architectural Overview & Context
+
+In a CMS-aligned network, authorization operates via **decoupled permission delegation**. Rather than requiring a patient to log in interactively at every individual Data Holder's patient portal, authorization is captured centrally or upstream and encapsulated inside a cryptographically signed **SMART Permission Ticket**.
+
+### Enhancing Patient & Network Use Cases
+
+Consider a patient managing a chronic health condition who uses a Personal Health Record (PHR) application to aggregate medical history from multiple providers, labs, and health plans. 
+
+1. **Seamless Patient Experience**: The patient authenticates once with an identity provider or Ticket Issuer (such as a CMS App Library or Credential Service Provider). Upon verifying patient identity and capturing explicit data-sharing consent, the Issuer generates a signed **SMART Permission Ticket**.
+2. **Identity Evidence Verification (`subject_identity_evidence`)**: To establish strong identity assurance across distinct clinical networks, the ticket includes `subject_identity_evidence` containing an embedded OIDC `id_token`. This payload documents verified identity evidence (e.g., NIST SP 800-63-3 IAL2 identity verification events by a CSP). Data Holders verify this evidence to confirm that the patient's identity was vetted to the required assurance level.
+3. **Disambiguation Policy for `subject.patient`**: Information in the `subject.patient` claim that is not present in a verified claim of the embedded `id_token` **MAY ONLY** be used to disambiguate when a matching algorithm from the *CMS-Aligned Patient Matching Specification* returns multiple candidate results. For example, if demographic matching returns 3 candidate records with identical confidence, a supplementary identifier in `subject.patient` (such as an MBI or MRN) that matches exactly 1 of those 3 candidates allows the Data Holder to resolve a single valid match.
+4. **Cryptographic Presenter Binding (`presenter_binding`)**: To prevent stolen or leaked tickets from being redeemed by unauthorized rogue applications, tickets issued for Individual Access Services **MUST** incorporate `presenter_binding` using the `jkt` (JWK Thumbprint) method. This binds the ticket specifically to the Client Application's public signing key. When redeeming the ticket, the Client Application presents a `client_assertion` signed by its private key. The Data Holder computes the JWK thumbprint (`jkt`) of the client's public key from the `client_assertion` (or retrieved from the client's `jwks_uri`) and verifies that it matches the `presenter_binding.jkt` claim inside the ticket.
+5. **Decoupled Cross-System Retrieval**: Armed with this key-bound ticket, the PHR application can query each participating Data Holder (hospitals, clinics, health plans) automatically behind the scenes.
+6. **Targeted Scopes & Period Constraints**: The ticket explicitly conveys the patient's identity (`subject.patient`), fine-grained SMART scopes (`smart_scopes`), and data date ranges (`data_period`), allowing Data Holders to grant precise access without requiring repetitive manual sign-ins.
+
+### Key Participants & Roles
+
+1. **Permission Ticket Issuer**: An authorized identity provider, credential service provider (CSP), patient-facing application, or network hub. The Issuer authenticates the patient (e.g., at Identity Assurance Level 2 / IAL2), captures sharing consent, and issues a signed [SMART Permission Ticket JWT](https://build.fhir.org/ig/jmandel/smart-permission-tickets-wip/index.html).
+2. **Client Application**: The application requesting patient data (e.g., a Personal Health Record or chronic disease management app). **Note**: A patient-facing application (or PHR) acting on behalf of the patient is explicitly considered a Client Application in this architecture. The Client Application registers dynamically with Data Holders as defined in [Registration](registration.html) and presents the Permission Ticket to obtain Data Holder-specific access tokens.
+3. **Data Holder**: A healthcare provider system, EHR, or Health Plan exposing FHIR APIs. The Data Holder verifies the ticket signature against the Issuer's trusted public keys, evaluates access constraints and presenter bindings, matches the subject patient to a local record, and issues scoped access tokens.
+
+---
+
+## Structure & Classification of SMART Permission Ticket Claims
+
+A SMART Permission Ticket is a signed JSON Web Token (JWT) whose claims define identity assertion, access constraints, presenter binding, and lifecycle control. Implementers MUST understand the distinction between claims embedded **within the Ticket JWT** versus parameters sent in the OAuth 2.0 `/token` HTTP exchange request.
+
+### Ticket JWT Claims Classification
+
+| Claim Category | Claim Name | Description & Conformance |
+| :--- | :--- | :--- |
+| **JWT Standard Claims** | `iss`, `sub`, `aud`, `exp`, `iat`, `jti` | Standard OAuth/JWT envelope claims identifying the Ticket Issuer, ticket subject, target audience (or Data Holder filter), expiration, and unique ticket identifier. |
+| **Subject Identity Claim** | `subject.patient` | **REQUIRED**. Contains a FHIR `Patient` resource representing the patient's demographic information (e.g., name, date of birth, identifiers, address). Data Holders use this claim to perform silent patient matching against local medical records. |
+| **Identity Evidence Claim** | `subject_identity_evidence` | **REQUIRED** for IAS. An array containing identity evidence objects. For Patient Self-Access, this contains an embedded `id_token` payload documenting how the patient's identity was vetted (e.g. IAL2 verification). |
+| **Presenter Binding Claim** | `presenter_binding` | **REQUIRED** for IAS. A JSON object defining cryptographic binding to the presenting client. In this IG, `presenter_binding.method` **MUST** be `"jkt"`, containing the RFC 7638 SHA-256 JWK Thumbprint (`jkt`) of the Client Application's public key. |
+| **Access Constraints Catalog** | `smart_scopes` | **REQUIRED**. A JSON array or string of SMART on FHIR access scopes (e.g., `["patient/*.rs"]`, `["patient/Observation.rs", "patient/Condition.rs"]`) authorized by the patient. |
+| **Access Constraints Catalog** | `data_period` | **OPTIONAL**. Constrains data access to resources created or covering a specific time window (e.g., `start` and `end` timestamps). |
+| **Access Constraints Catalog** | `data_holder_filter` | **OPTIONAL**. Restricts valid redemption to specific Data Holder organization identifiers or endpoints. |
+| **Continuation Credential Claim** | `continuation` | **OPTIONAL** (Proposal 004). An issuer-defined continuation object or handle embedded inside the ticket JWT. It specifies parameters and semantics for issuer-bounded continuation, enabling the Client Application to obtain updated permission tickets or extend access beyond the initial ticket expiration (`exp`). |
+
+#### Example SMART Permission Ticket Payload (Patient Self-Access)
+
+```json
+{
+  "iss": "https://issuer.example.org",
+  "sub": "pat-user-99120",
+  "aud": "https://dataholder.example.org/fhir",
+  "exp": 1770000000,
+  "iat": 1769996400,
+  "jti": "ticket-uuid-88123-abc",
+  "subject": {
+    "patient": {
+      "resourceType": "Patient",
+      "name": [{"family": "Smith", "given": ["Jane"]}],
+      "birthDate": "1985-04-12",
+      "gender": "female",
+      "identifier": [
+        {
+          "system": "http://hl7.org/fhir/sid/us-mbi",
+          "value": "1EG4-TE5-MK73"
+        }
+      ]
+    }
+  },
+  "subject_identity_evidence": [
+    {
+      "source": "embedded",
+      "token_type": "id_token",
+      "jwt": "eyJhbGciOiJSUzI1NiIsImtpZCI6ImNzcC1rZXktMSJd..."
+    }
+  ],
+  "presenter_binding": {
+    "method": "jkt",
+    "jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I"
+  },
+  "smart_scopes": ["patient/*.rs"]
+}
+```
+
+---
+
+#### Conformance Requirements
+
+The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**, **SHOULD**, **SHOULD NOT**, **RECOMMENDED**, **MAY**, and **OPTIONAL** in this document are to be interpreted as described in [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119) and [RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
+
+1. **Registration Dependency**: Client Applications **SHALL** complete [Dynamic Client Registration](registration.html) with the target Data Holder prior to requesting access tokens. Data Holders **SHALL** verify that `client_id` corresponds to an active, non-canceled client registration (`library_status == "active"`). If the registration is missing, inactive, or canceled (`grant_types: []`), the Data Holder **MUST** reject the token request with `HTTP 400 Bad Request` (`error="invalid_client"`).
+2. **Grant Type**: Token requests **SHALL** specify `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`. Data Holders **SHALL** verify that `urn:ietf:params:oauth:grant-type:token-exchange` was approved during dynamic registration for the presenting `client_id`.
+3. **Subject Token**: Token requests **SHALL** specify `subject_token_type=urn:ietf:params:oauth:token-type:smart-permission-ticket` and supply a signed SMART Permission Ticket JWT in the `subject_token` parameter.
+4. **Client Authentication (`private_key_jwt`)**: Client Applications **SHALL** authenticate at the Data Holder's token endpoint using `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer` and a signed JWT in `client_assertion`.
+   - **`client_assertion` Requirements & Restrictions**: Per RFC 7523, the `client_assertion` JWT **MUST** contain `iss` (set to the registered `client_id`), `sub` (set to the registered `client_id`), `aud` (set to the Data Holder's `/token` endpoint URL), `exp` (expiration within 5 minutes of creation), and `jti` (unique token ID to prevent replay attacks). Data Holders **SHALL** reject assertions with expired lifetimes, mismatched audiences, or reused `jti` nonces.
+5. **Presenter Binding Validation**: Data Holders **SHALL** enforce `presenter_binding` verification for IAS tickets. The Data Holder **SHALL** compute the SHA-256 JWK Thumbprint (RFC 7638) of the public key used to sign `client_assertion` (or fetched from the client's `jwks_uri`) and confirm it matches the `presenter_binding.jkt` claim in the ticket. If the thumbprints do not match, the Data Holder **SHALL** reject the request with HTTP 400 `invalid_grant`.
+6. **Identity Evidence & Disambiguation Rules**: Data Holders **SHALL** evaluate `subject_identity_evidence` (embedded `id_token`) to verify identity assurance levels. Unverified claims in `subject.patient` **MAY ONLY** be used for disambiguation when patient matching yields multiple candidate records.
+7. **Scopes & Constraints Evaluation**: Token requests **MAY** specify requested SMART scopes in the `scope` parameter. Granted scopes **SHALL NOT** exceed the permissions granted in the ticket's `smart_scopes` claim or the client's registered scopes. However, Data Holders **MAY** include additional baseline or protocol-level scopes (such as `openid` or `fhirUser`) in the token response even if omitted from the `POST /token` `scope` parameter.
+8. **Identity Resolution Fallback**: If a Data Holder cannot complete patient identity resolution silently from the ticket's `subject.patient` claims (e.g. ambiguous or low-confidence demographic match), it **SHALL NOT** reject with `invalid_grant` if the ticket is otherwise valid and presenter binding succeeds. Instead, it **MAY** return HTTP `400 Bad Request` with `error="interaction_required"` and a `launch` parameter to initiate a SMART EHR Launch fallback per [SMART Permission Tickets Proposal 001](https://build.fhir.org/ig/jmandel/smart-permission-tickets-wip/proposal-001-authz-code-fallback.html). Data Holders **SHALL** verify that the client was registered with `authorization_code` in `grant_types` and a matching `redirect_uri` prior to executing the fallback flow.
+
+---
+
+## Token Exchange & Interaction Protocols
+
+##### Primary Flow: Silent Token Exchange (RFC 8693)
+
+The primary path enables non-interactive, multi-site record retrieval. The Client Application obtains a SMART Permission Ticket from an Issuer and presents it to the Data Holder for direct token issuance.
+
+<p align="center">
+  <img src="getting-access-token.svg" alt="Primary Silent Token Exchange Flow Diagram" style="max-width: 100%; height: auto;" />
+</p>
+
+```plantuml
+@startuml
+scale max 1000 width
+autonumber
+actor "Patient / App" as Client
+participant "CSP / Ticket Issuer" as Issuer
+participant "Data Holder /token" as DH
+participant "FHIR API Endpoint" as FHIR
+
+Client -> Issuer: Authenticate & Obtain SMART Permission Ticket (with presenter_binding & subject_identity_evidence)
+Issuer --> Client: Return Signed SMART Permission Ticket JWT
+Client -> DH: POST /token (grant_type=token-exchange, subject_token=Ticket, client_assertion=private_key_jwt)
+DH -> Issuer: Resolve Issuer Keys & Verify Ticket Signature
+DH -> DH: Verify presenter_binding (jkt) vs client_assertion key & Validate subject_identity_evidence
+DH -> DH: Match subject.patient Demographics to Local Record & Evaluate smart_scopes
+DH --> Client: HTTP 200 OK { access_token, token_type: "Bearer", expires_in, scope, patient }
+Client -> FHIR: GET /Patient/123/Observation (Authorization: Bearer <access_token>)
+FHIR --> Client: Return FHIR Data Bundle
+@enduml
+```
+
+#### Token Exchange Request Parameters (`POST /token`)
+
+Client Applications **SHALL** make an HTTP `POST` request to the Data Holder's token endpoint with `Content-Type: application/x-www-form-urlencoded`.
+
+| Parameter | Conformance | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `grant_type` | **SHALL** | String | **MUST** be `urn:ietf:params:oauth:grant-type:token-exchange`. |
+| `subject_token` | **SHALL** | String (JWT) | The signed SMART Permission Ticket JWT (containing `subject.patient`, `smart_scopes`, `presenter_binding`, and `subject_identity_evidence`). |
+| `subject_token_type` | **SHALL** | String | **MUST** be `urn:ietf:params:oauth:token-type:smart-permission-ticket` (or `urn:ietf:params:oauth:token-type:jwt`). |
+| `client_assertion_type` | **SHALL** | String | **MUST** be `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`. |
+| `client_assertion` | **SHALL** | String (JWT) | Signed JWT for client authentication (`private_key_jwt`). MUST contain `iss` and `sub` set to `client_id`, `aud` set to token endpoint URL, short `exp` ($\le$ 5 min), and unique `jti`. Key used for signature MUST match `presenter_binding.jkt`. |
+| `scope` | **OPTIONAL** | String | Requested SMART scopes (e.g. `patient/*.rs`). Granted scopes MUST NOT exceed ticket `smart_scopes` or client registration, but Data Holders MAY issue additional baseline scopes (e.g. `openid`). |
+
+##### Example Token Exchange Request
+
+```http
+POST /oauth/token HTTP/1.1
+Host: dataholder.example.org
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange
+&subject_token=eyJhbGciOiJSUzI1NiIsImtpZCI6InRpY2tldC1rZXktMSJd...
+&subject_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Asmart-permission-ticket
+&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer
+&client_assertion=eyJhbGciOiJFUzM4NCIsImtpZCI6ImFwcC1rZXktMSJd...
+&scope=patient%2F*.rs
+```
+
+##### Example `client_assertion` Decoded Payload
+
+Per RFC 7523, the `client_id` is asserted inside the `client_assertion` JWT:
+
+```json
+{
+  "iss": "dh_client_982347102934",
+  "sub": "dh_client_982347102934",
+  "aud": "https://dataholder.example.org/token",
+  "exp": 1769996700,
+  "iat": 1769996400,
+  "jti": "assertion-nonce-99231"
+}
+```
+
+#### Successful Token Response Parameters
+
+Upon successful verification, presenter binding match, and patient matching, the Data Holder **SHALL** return HTTP status `200 OK`.
+
+| Parameter | Conformance | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `access_token` | **SHALL** | String | Bearer access token for invoking Data Holder FHIR APIs. |
+| `token_type` | **SHALL** | String | **MUST** be `"Bearer"`. |
+| `expires_in` | **SHALL** | Integer | Lifetime of access token in seconds (e.g., `3600`). |
+| `scope` | **SHALL** | String | Granted SMART scopes (evaluated against ticket `smart_scopes`, registered client scopes, and local Data Holder policy). |
+| `patient` | **SHOULD** | String | Local Patient resource ID at the Data Holder bound to this token session. |
+| `refresh_token` | **OPTIONAL** | String | Optional refresh token issued to extend access without re-exchanging the permission ticket. |
+
+##### Example Successful Token Response
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json;charset=UTF-8
+Cache-Control: no-store
+
+{
+  "access_token": "eyJhbGciOiJSUzI1Ni...[access_token_jwt]...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "patient/*.rs",
+  "patient": "pat-88321",
+  "refresh_token": "rt_98123abc789"
+}
+```
+
+---
+
+### Fallback Flow: Identity Resolution Fallback (`interaction_required`)
+
+When demographic matching yields multiple candidates or insufficient confidence, the Data Holder triggers the Identity Resolution Fallback (Proposal 001) to prompt a one-time interactive resolution instead of failing with `invalid_grant`.
+
+<p align="center">
+  <img src="getting-access-token_001.svg" alt="Identity Resolution Fallback Flow Diagram" style="max-width: 100%; height: auto;" />
+</p>
+
+```plantuml
+@startuml
+scale max 1000 width
+autonumber
+actor "Patient" as Patient
+participant "Client App" as Client
+participant "Data Holder Token Endpoint" as DH_Token
+participant "Data Holder Authorize Endpoint" as DH_Auth
+
+Client -> DH_Token: 1. POST /token (Token Exchange with SMART Permission Ticket)
+DH_Token -> DH_Token: 2. Ticket & presenter_binding Valid, but Patient Identity Resolution Ambiguous
+DH_Token --> Client: 3. HTTP 400 { "error": "interaction_required", "launch": "ctx-abc123XYZ" }
+Client -> Patient: 4. Prompt Patient to Complete One-Time Identification
+Patient -> DH_Auth: 5. Redirect GET /authorize?response_type=code&client_id=...&launch=ctx-abc123XYZ
+DH_Auth -> Patient: 6. Interactive Patient Identity Selection / Auth Page
+Patient --> DH_Auth: 7. Patient Resolves Identity
+DH_Auth --> Client: 8. Redirect with Authorization Code (?code=authz_code_789)
+Client -> DH_Token: 9. POST /token (grant_type=authorization_code, code=authz_code_789)
+DH_Token --> Client: 10. HTTP 200 OK { access_token, patient }
+@enduml
+```
+
+#### `interaction_required` Response Parameters
+
+| Parameter | Conformance | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `error` | **SHALL** | String | **MUST** be `"interaction_required"`. |
+| `launch` | **SHALL** | String | Opaque, unguessable, single-use launch handle bound internally to the cached ticket context. |
+| `error_description` | **SHOULD** | String | Human-readable description (e.g., `"Patient identity resolution requires interactive matching"`). |
+
+##### Example `interaction_required` Error Response
+
+```http
+HTTP/1.1 400 Bad Request
+Content-Type: application/json;charset=UTF-8
+Cache-Control: no-store
+
+{
+  "error": "interaction_required",
+  "launch": "ctx-abc123XYZ890",
+  "error_description": "Patient identity resolution requires interactive matching"
+}
+```
+
+#### Executing the Identity Resolution Fallback
+
+1. **Pre-flight Registration Verification**: The Data Holder **SHALL** verify that the presenting `client_id` was dynamically registered with the `authorization_code` grant type and includes a registered `redirect_uri` matching the parameter in the authorize request.
+2. The Client Application redirects the browser to the Data Holder's `/authorize` endpoint including the `launch` value:
+   ```http
+   GET /authorize?
+     response_type=code
+     &client_id=dh_client_982347102934
+     &redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback
+     &scope=patient%2F*.rs
+     &launch=ctx-abc123XYZ890
+     &aud=https%3A%2F%2Fdataholder.example.org%2Ffhir HTTP/1.1
+   Host: dataholder.example.org
+   ```
+3. The patient authenticates or selects their record interactively at the Data Holder.
+4. The Data Holder issues an authorization code and redirects to the registered `redirect_uri`.
+5. The Client Application exchanges the authorization code via standard `grant_type=authorization_code` (authenticating via `private_key_jwt`) to receive the final `access_token`.
+6. Once resolved for a ticket `jti`, subsequent token exchanges for the same ticket **SHOULD** succeed silently without repeating the fallback.
