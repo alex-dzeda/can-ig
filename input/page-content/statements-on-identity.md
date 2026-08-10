@@ -4,15 +4,15 @@ This section specifies rules and operational guidance for asserting identity cla
 
 ---
 
-## 1. Verified Claims vs. Disambiguation Claims
+## Verified Claims vs. Disambiguation Claims
 
 When evaluating identity assertions encapsulated in a **SMART Permission Ticket** (specifically within `subject.patient` and `subject_identity_evidence`), Data Holders **SHALL** distinguish between verified identity claims established by a Credential Service Provider (CSP) or Identity Provider (IdP) versus supplementary demographic parameters supplied for disambiguation.
 
-### 1.1 Disambiguation Matching Policy
+### Disambiguation Matching Policy
 
 Information in the `subject.patient` parameter of a ticket that is **not** present in a verified claim of an embedded `id_token` (within `subject_identity_evidence`) **MAY ONLY** be used to disambiguate when a matching algorithm from the *CMS-Aligned Patient Matching Specification* returns multiple potential candidate results.
 
-### 1.2 Disambiguation Example (e.g. MBI / Medicare Beneficiary Identifier)
+### Disambiguation Example (e.g. MBI / Medicare Beneficiary Identifier)
 
 Consider a scenario where a Data Holder's local Master Patient Index (MPI) matching algorithm evaluates verified demographic claims (e.g. verified Name, Date of Birth, and SSN) and yields **3 potential candidate records** with identical matching scores.
 
@@ -22,7 +22,7 @@ If the ticket's `subject.patient` payload includes a supplementary identifier su
 
 ---
 
-## 2. Identity Evidence Structure (`subject_identity_evidence`)
+## Identity Evidence Structure (`subject_identity_evidence`)
 
 For Patient Self-Access (Individual Access Services), identity evidence is carried in the `subject_identity_evidence` claim of the SMART Permission Ticket as an embedded OIDC `id_token`:
 

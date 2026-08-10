@@ -49,6 +49,13 @@ end
 @enduml
 ```
 
+### Cross-Network & Multi-Network Registration
+
+Because trust in this architecture is anchored in the central CMS-signed Software Statement and National Provider Directory (NPD) trust bundle, Client Applications are **not restricted** to registering exclusively with a single "home" network:
+
+- **Federated Registration**: A registered Client Application MAY present its CMS-signed software statement to hit `POST /register` at **ANY CMS-aligned Network Broker, Clearinghouse, or Data Holder** across the United States.
+- **Automated Trust Acceptance**: Responding Network Brokers and Data Holders **SHALL** accept and process valid CMS-signed software statements regardless of whether the application originated from a different network or region, issuing a local `client_id` via RFC 7591 without requiring manual onboarding or bilateral business contracts.
+
 ---
 
 ## Conformance Requirements
@@ -62,7 +69,7 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
    - The Client Application **SHALL** prove key possession during registration by including `client_assertion` and `client_assertion_type: urn:ietf:params:oauth:client-assertion-type:jwt-bearer` parameters in the JSON request body, signed with a private key whose corresponding public key is published at the app's `jwks_uri`.
    - The Client Application **SHALL** maintain its published JWKS at the verified `jwks_uri` endpoint.
 
-2. **Data Holder Requirements**:
+2. **Data Holder & Network Broker Requirements**:
    - The Data Holder **SHALL** expose an RFC 7591 compliant endpoint (typically `/register`).
    - The Data Holder **SHALL** publish its dynamic registration endpoint in its `.well-known/openid-configuration` and `.well-known/oauth-authorization-server` metadata documents under the `registration_endpoint` claim.
    - The Data Holder **SHALL** validate the cryptographic signature of the `software_statement` using the public keys published by CMS.
@@ -73,6 +80,7 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
    - If `scope` is omitted in the registration request, the Data Holder **SHOULD** default to the maximum permissible SMART scopes allowed for the application's `extensions.cms_app.app_class`.
    - The Data Holder **SHOULD NOT** allow the use of the `authorization_code` grant type if `redirect_uris` is not present in the registration request.
    - If a registration request contains an empty `grant_types` array (e.g., `[]`), the Data Holder **SHALL** cancel/deactivate the client's registration.
+   - Network Brokers and Data Holders **SHALL** process RFC 7591 dynamic registration requests from any Client Application presenting a valid CMS-signed software statement, regardless of the application's primary network affiliation.
    - Upon successful verification, the Data Holder **SHALL** register or update the client, preserve the existing `client_id` binding if updating an existing `software_id`, and return a JSON response containing `client_id`, `grant_types`, `jwks_uri`, and registered `scope`.
 
 ---

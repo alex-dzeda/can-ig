@@ -4,7 +4,7 @@ This section specifies the technical architecture, protocol requirements, and op
 
 ---
 
-## 1. Architectural Overview & Context
+## Architectural Overview & Context
 
 In a CMS-aligned network, authorization operates via **decoupled permission delegation**. Rather than requiring a patient to log in interactively at every individual Data Holder's patient portal, authorization is captured centrally or upstream and encapsulated inside a cryptographically signed **SMART Permission Ticket**.
 
@@ -30,8 +30,6 @@ Consider a patient managing a chronic health condition who uses a Personal Healt
 ## Structure & Classification of SMART Permission Ticket Claims
 
 A SMART Permission Ticket is a signed JSON Web Token (JWT) whose claims define identity assertion, access constraints, presenter binding, and lifecycle control. Implementers **SHALL** understand the distinction between claims embedded **within the Ticket JWT** versus parameters sent in the OAuth 2.0 `/token` HTTP exchange request.
-
-### Ticket JWT Claims Classification
 
 ### Ticket JWT Claims Classification
 
@@ -104,7 +102,8 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
 5. **Presenter Binding Validation**: Data Holders **SHALL** enforce `presenter_binding` verification for IAS tickets. The Data Holder **SHALL** compute the SHA-256 JWK Thumbprint (RFC 7638) of the public key used to sign `client_assertion` (or fetched from the client's `jwks_uri`) and confirm it matches the `presenter_binding.jkt` claim in the ticket. If the thumbprints do not match, the Data Holder **SHALL** reject the request with HTTP 400 `invalid_grant`.
 6. **Identity Evidence & Disambiguation Rules**: Data Holders **SHALL** evaluate `subject_identity_evidence` (embedded `id_token`). Embedded `id_token` assertions **SHALL** meet the identity assurance specifications detailed in [Identity and Patient Matching](statements-on-identity.html). Unverified claims in `subject.patient` **MAY ONLY** be used for disambiguation when patient matching yields multiple candidate records.
 7. **Scopes & Constraints Evaluation**: Token requests **MAY** specify requested SMART scopes in the `scope` parameter. Granted scopes **SHALL NOT** exceed the permissions granted in the ticket's `smart_scopes` claim or the client's registered scopes. However, Data Holders **MAY** include additional baseline or protocol-level scopes (such as `openid` or `fhirUser`) in the token response even if omitted from the `POST /token` `scope` parameter.
-8. **Identity Resolution Fallback**: If a Data Holder cannot complete patient identity resolution silently from the ticket's `subject.patient` claims (e.g. ambiguous or low-confidence demographic match), it **SHALL NOT** reject with `invalid_grant` if the ticket is otherwise valid and presenter binding succeeds. Instead, it **MAY** return HTTP `400 Bad Request` with `error="interaction_required"` and a `launch` parameter to initiate a SMART EHR Launch fallback per [SMART Permission Tickets Proposal 001](https://build.fhir.org/ig/jmandel/smart-permission-tickets-wip/proposal-001-authz-code-fallback.html). Data Holders **SHALL** verify that the client was registered with `authorization_code` in `grant_types` and a matching `redirect_uri` prior to executing the fallback flow.
+8. **Access Token Lifetime**: Data Holders **SHALL** issue access tokens with a maximum lifetime of 60 minutes (`expires_in` $\le 3600$ seconds).
+9. **Identity Resolution Fallback**: If a Data Holder cannot complete patient identity resolution silently from the ticket's `subject.patient` claims (e.g. ambiguous or low-confidence demographic match), it **SHALL NOT** reject with `invalid_grant` if the ticket is otherwise valid and presenter binding succeeds. Instead, it **MAY** return HTTP `400 Bad Request` with `error="interaction_required"` and a `launch` parameter to initiate a SMART EHR Launch fallback per [SMART Permission Tickets Proposal 001](https://build.fhir.org/ig/jmandel/smart-permission-tickets-wip/proposal-001-authz-code-fallback.html). Data Holders **SHALL** verify that the client was registered with `authorization_code` in `grant_types` and a matching `redirect_uri` prior to executing the fallback flow.
 
 ---
 
@@ -112,7 +111,9 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
 
 ##### Primary Flow: Silent Token Exchange (RFC 8693)
 
-The primary path enables non-interactive, multi-site record retrieval. The Client Application obtains a SMART Permission Ticket from an Issuer and presents it to the Data Holder for direct token issuance.
+The primary path enables non-interactive, multi-site record retrieval. For targeted queries against a known Data Holder (e.g. discovered via National Provider Directory or Network RLS), the Client Application **bypasses `$match` at the Data Holder level** and proceeds directly to `POST /token`.
+
+The Data Holder's Authorization Server performs 1-step silent identity resolution internally during token exchange: it verifies `presenter_binding.jkt`, evaluates `subject.patient` demographics against local medical records, and validates `subject_identity_evidence`. If identity resolution yields a unique 1-to-1 match, the Data Holder issues an `access_token` bound to the local `patient` ID in a single round-trip.
 
 <p align="center">
   <img src="getting-access-token.svg" alt="Primary Silent Token Exchange Flow Diagram" style="max-width: 100%; height: auto;" />
@@ -190,7 +191,7 @@ Upon successful verification, presenter binding match, and patient matching, the
 | :--- | :--- | :--- | :--- |
 | `access_token` | **SHALL** | String | Bearer access token for invoking Data Holder FHIR APIs. |
 | `token_type` | **SHALL** | String | **MUST** be `"Bearer"`. |
-| `expires_in` | **SHALL** | Integer | Lifetime of access token in seconds (e.g., `3600`). |
+| `expires_in` | **SHALL** | Integer | Lifetime of access token in seconds (e.g., `3600`). Data Holders **SHALL** issue access tokens with a maximum lifetime of 60 minutes (3600 seconds). |
 | `scope` | **SHALL** | String | Granted SMART scopes (evaluated against ticket `smart_scopes`, registered client scopes, and local Data Holder policy). |
 | `patient` | **SHOULD** | String | Local Patient resource ID at the Data Holder bound to this token session. |
 | `refresh_token` | **MAY** | String | Optional refresh token issued to extend access without re-exchanging the permission ticket. |
