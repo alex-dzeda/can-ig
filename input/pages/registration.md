@@ -2,7 +2,7 @@
 
 This section specifies the dynamic client registration protocol for Client Applications connecting to Data Holders within a CMS-aligned network.
 
-Data Holders **SHALL** support **Option 2: Direct Presentation of CMS Software Statement at Each Data Holder** via RFC 7591 Dynamic Client Registration with key-possession proof of client ownership.
+Registration **SHALL** be completed via direct presentation of a CMS Software Statement at each Data Holder via RFC 7591 Dynamic Client Registration with key-possession proof of client ownership.
 
 ---
 
@@ -55,6 +55,11 @@ Because trust in this architecture is anchored in the central CMS-signed Softwar
 
 - **Federated Registration**: A registered Client Application MAY present its CMS-signed software statement to hit `POST /register` at **ANY CMS-aligned Network Broker, Clearinghouse, or Data Holder** across the United States.
 - **Automated Trust Acceptance**: Responding Network Brokers and Data Holders **SHALL** accept and process valid CMS-signed software statements regardless of whether the application originated from a different network or region, issuing a local `client_id` via RFC 7591 without requiring manual onboarding or bilateral business contracts.
+
+> [!TIP]
+> **Developer Implementation Guidance: JWKS & Key Rotation**:
+> - **Private Key & `kid` Matching**: Client Applications **MUST** sign all `client_assertion` JWTs with a private key whose corresponding public key is published at the app's `jwks_uri`. The JOSE header of the `client_assertion` **MUST** include a `kid` (Key ID) parameter matching the `kid` in the published JWKS.
+> - **Key Rotation**: When rotating public keys at `jwks_uri`, applications SHOULD retain previous public keys for at least 24 hours to prevent registration or authentication failures during key cache propagation.
 
 ---
 
