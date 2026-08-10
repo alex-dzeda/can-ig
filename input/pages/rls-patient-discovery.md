@@ -10,14 +10,14 @@ In a CMS-aligned network, discovering where a patient's medical records reside a
 
 ### Key Concepts & Workflow Steps
 
-1. **Dynamic Client Registration Prerequisite**: Prior to invoking Record Location Service (RLS) or Patient Discovery endpoints, the Client Application **MUST** have completed [Dynamic Client Registration](registration.html) with the target Data Holder or RLS hub.
+1. **Dynamic Client Registration Prerequisite**: Prior to invoking Record Location Service (RLS) or Patient Discovery endpoints, the Client Application **SHALL** have completed [Dynamic Client Registration](registration.html) with the target Data Holder or RLS hub.
 2. **Directory Listing of RLS Endpoints**: Data Holders **SHALL** expose the `$match` operation in their `CapabilityStatement`. The official RLS endpoint URL for a Data Holder's FHIR endpoints **SHALL** be listed in the National Provider Directory, regardless of whether RLS execution is federated across hubs or hosted directly by individual Data Holders.
 3. **App Authentication via CSP**: In an IAS workflow, the Client Application first authenticates the patient out-of-band using an accredited Credential Service Provider (CSP) or Identity Provider, receiving an OIDC `id_token` asserting the patient's verified identity at IAL2.
 4. **System Access Token (Client Credentials)**: To query the RLS / Patient Discovery endpoint, a registered Client Application authenticates at the Data Holder's token endpoint using `grant_type=client_credentials` with `private_key_jwt` and requests at least the `system/Patient.rs` scope.
 5. **No Patient Context in System Access Token**: Unlike patient-facing session tokens, the access token returned from the client credentials exchange carries **no initial patient context** (it is scoped at the system level for RLS query execution).
-6. **IAS Verification Header (`X-IAS-ID-Token`)**: For Individual Access Services (IAS) workflows, the Client Application **MUST** include an `X-IAS-ID-Token` HTTP header containing the patient's verified OIDC `id_token`. The `aud` (audience) claim of this `id_token` **MUST** contain the application's `software_id` URI as asserted inside the CMS-signed software statement presented during dynamic registration.
-7. **Strict Match Constraints (`onlyCertainMatches=true` & Single Result)**: For IAS workflows, the `$match` request `onlyCertainMatches` parameter **MUST** be set to `true`. Furthermore, Data Holders **SHALL** return at most **one** matched patient record in the response Bundle. If matching yields multiple candidates or ambiguous results, the Data Holder **SHALL** return an empty searchset Bundle (`total: 0`).
-8. **`fullUrl` Requirement in SearchSet Response**: Data Holders and RLS hubs responding to `$match` requests **SHALL** return a `Bundle` of type `searchset`. Every `entry` inside the response Bundle **MUST** include a valid `fullUrl` element pointing to the canonical FHIR Patient resource URI or absolute endpoint URL for that matched record.
+6. **IAS Verification Header (`X-IAS-ID-Token`)**: For Individual Access Services (IAS) workflows, the Client Application **SHALL** include an `X-IAS-ID-Token` HTTP header containing the patient's verified OIDC `id_token`. The `aud` (audience) claim of this `id_token` **SHALL** contain the application's `software_id` URI as asserted inside the CMS-signed software statement presented during dynamic registration.
+7. **Strict Match Constraints (`onlyCertainMatches=true` & Single Result)**: For IAS workflows, the `$match` request `onlyCertainMatches` parameter **SHALL** be set to `true`. Furthermore, Data Holders **SHALL** return at most **one** matched patient record in the response Bundle. If matching yields multiple candidates or ambiguous results, the Data Holder **SHALL** return an empty searchset Bundle (`total: 0`).
+8. **`fullUrl` Requirement in SearchSet Response**: Data Holders and RLS hubs responding to `$match` requests **SHALL** return a `Bundle` of type `searchset`. Every `entry` inside the response Bundle **SHALL** include a valid `fullUrl` element pointing to the canonical FHIR Patient resource URI or absolute endpoint URL for that matched record.
 9. **Auditability (`AuditEvent`)**: Every invocation of the FHIR `$match` operation **SHALL** be auditable by both the requesting client system and the responding Data Holder by generating standard FHIR `AuditEvent` records.
 
 ---
@@ -32,18 +32,18 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
 4. **Client Credentials Authentication**:
    - The Client Application **SHALL** request an access token via `grant_type=client_credentials` using `private_key_jwt` client authentication (`client_assertion`).
    - The Client Application **SHALL** request at least `system/Patient.rs` in the `scope` parameter.
-   - The `client_assertion` JWT presented during `client_credentials` authentication **MUST** include the [HL7 UDAP B2B Authorization Extension Object](https://build.fhir.org/ig/HL7/fhir-udap-security-ig/branches/master/b2b.html#b2b-authorization-extension-object) (`hl7-b2b` claim) formatted as follows:
+   - The `client_assertion` JWT presented during `client_credentials` authentication **SHALL** include the [HL7 UDAP B2B Authorization Extension Object](https://build.fhir.org/ig/HL7/fhir-udap-security-ig/branches/master/b2b.html#b2b-authorization-extension-object) (`hl7-b2b` claim) formatted as follows:
      - `version`: **MUST** be `"1"`.
      - `purpose_of_use`: **MUST** be an array containing `"PATRQT"` (`["PATRQT"]`).
      - `organization_id`: **MUST** be set to the canonical organization URI for the requesting entity as published in the National Provider Directory (NPD).
    - Data Holders **SHALL NOT** return patient launch context inside the resulting client credentials token response.
 5. **IAS Identity Header (`X-IAS-ID-Token`)**:
    - For Individual Access Services (IAS) workflows, the Client Application **SHALL** include the `X-IAS-ID-Token: <jwt>` HTTP header in the `$match` request.
-   - The header value **MUST** contain a valid OIDC `id_token` asserting the patient's verified identity (e.g. IAL2 verification).
-   - The `aud` (audience) claim of the `id_token` **MUST** contain the `software_id` URI specified in the Client Application's CMS-signed software statement presented during [Dynamic Client Registration](registration.html).
+   - The header value **SHALL** contain a valid OIDC `id_token` asserting the patient's verified identity (e.g. IAL2 verification).
+   - The `aud` (audience) claim of the `id_token` **SHALL** contain the `software_id` URI specified in the Client Application's CMS-signed software statement presented during [Dynamic Client Registration](registration.html).
    - Data Holders **SHALL** validate that `aud` matches the registered `software_id`, and verify the signature, expiration, and issuer of the `X-IAS-ID-Token` header before processing the match query.
 6. **IAS Certain Match & Single Result Restrictions**:
-   - For IAS workflows, the `$match` request `onlyCertainMatches` parameter **MUST** be set to `true`.
+   - For IAS workflows, the `$match` request `onlyCertainMatches` parameter **SHALL** be set to `true`.
    - Data Holders **SHALL** return at most **one** (`1`) matched patient record in the response `Bundle`.
    - If demographic matching results in zero matches or multiple candidate matches, the Data Holder **SHALL** return an HTTP `200 OK` response with a searchset `Bundle` containing `total: 0` and an empty `entry` array.
 7. **Demographic & Identifier Search Parameters**:
@@ -51,7 +51,7 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
    - Additional identifiers known to the submitter (e.g., MBI, MRN, SSN) **MAY** be submitted within the `Patient` resource payload. Refer to [Identity and Patient Matching](statements-on-identity.html) for specific use cases and disambiguation rules.
 8. **Response Bundle & `fullUrl` Requirement**:
    - Data Holders **SHALL** respond with HTTP `200 OK` and a `Bundle` of type `searchset`.
-   - Every `entry` element inside the response `Bundle` **MUST** include a non-empty `fullUrl` representing the absolute URL of the matched Patient resource (or absolute Data Holder endpoint).
+   - Every `entry` element inside the response `Bundle` **SHALL** include a non-empty `fullUrl` representing the absolute URL of the matched Patient resource (or absolute Data Holder endpoint).
    - Each entry `search.score` **SHOULD** reflect the match confidence score (ranging from `0.0` to `1.0`).
 9. **AuditEvent Recording**:
    - Every execution of the `$match` operation **SHALL** be recorded in an `AuditEvent` resource by the Data Holder capturing the requesting client identity (`client_id`), timestamp, `$match` parameter hashes, and resulting match outcome.
@@ -235,7 +235,7 @@ Content-Type: application/fhir+json;charset=UTF-8
 
 ## 5. Auditability Expectations (`AuditEvent`)
 
-Every execution of the `$match` operation **MUST** be recorded in an audit trail. Data Holders **SHALL** generate a FHIR `AuditEvent` resource for each Patient Discovery query. 
+Every execution of the `$match` operation **SHALL** be recorded in an audit trail. Data Holders **SHALL** generate a FHIR `AuditEvent` resource for each Patient Discovery query. 
 
 > [!NOTE]
 > Detailed profiles and implementation guidelines for the `AuditEvent` resource supporting RLS and Patient Discovery will be formally incorporated in a subsequent release.
@@ -251,4 +251,4 @@ Key audit attributes recorded include:
 ## 6. Points for Discussion
 
 > [!IMPORTANT]
-> **Placement of the ID Token**: The placement of the OIDC `id_token` (e.g. `X-IAS-ID-Token` header) in this workflow is **not finalized** and remains under active workgroup discussion. While the verified patient assertion could theoretically be conveyed using SMART Permission Tickets during token exchange, doing so for initial Patient Discovery would result in a clunky, multi-hop interface. The workgroup is evaluating the optimal balance between header assertions and ticket-based mechanisms.
+> **Placement of the ID Token**: The placement of the OIDC `id_token` (e.g. `X-IAS-ID-Token` header) in this workflow is **not finalized** and remains under active consideration. While the verified patient assertion could theoretically be conveyed using SMART Permission Tickets during token exchange, doing so for initial Patient Discovery would result in a clunky, multi-hop interface. Ongoing evaluations are considering the optimal balance between header assertions and ticket-based mechanisms.

@@ -69,7 +69,7 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
    - The Data Holder **SHALL** verify the key-possession proof in the request body (`client_assertion`) by fetching the public keys from the client's `jwks_uri` (as declared in the software statement) and confirming the `client_assertion` signature.
    - The Data Holder **SHALL** verify that `extensions.cms_app.library_status` is `"active"`.
    - The Data Holder **SHALL** verify that the current timestamp is within the validity window defined by `iat` and `exp`.
-   - The Data Holder **MUST NOT** grant any `grant_type` in the registration response that is not present in the CMS-Signed `software_statement`. The requested `grant_types` **MUST** be a subset of or equal to the permitted grant types in the software statement.
+   - The Data Holder **SHALL NOT** grant any `grant_type` in the registration response that is not present in the CMS-Signed `software_statement`. The requested `grant_types` **SHALL** be a subset of or equal to the permitted grant types in the software statement.
    - If `scope` is omitted in the registration request, the Data Holder **SHOULD** default to the maximum permissible SMART scopes allowed for the application's `extensions.cms_app.app_class`.
    - The Data Holder **SHOULD NOT** allow the use of the `authorization_code` grant type if `redirect_uris` is not present in the registration request.
    - If a registration request contains an empty `grant_types` array (e.g., `[]`), the Data Holder **SHALL** cancel/deactivate the client's registration.
@@ -155,7 +155,7 @@ Client Applications **SHALL** register or update their registration dynamically 
 
 ### Proof of Key Possession (`client_assertion`)
 
-To prevent an attacker from copying a publicly accessible `software_statement` JWT from the National Provider Directory and attempting to register on behalf of another application, the Client Application **MUST** present a self-contained Proof of Key Possession JWT using standard RFC 7523 `private_key_jwt` parameters inside the JSON request body.
+To prevent an attacker from copying a publicly accessible `software_statement` JWT from the National Provider Directory and attempting to register on behalf of another application, the Client Application **SHALL** present a self-contained Proof of Key Possession JWT using standard RFC 7523 `private_key_jwt` parameters inside the JSON request body.
 
 The key-possession proof certifies that the entity initiating dynamic registration currently holds the private signing key corresponding to a public key published at the application's verified `jwks_uri` (as declared inside the `software_statement`).
 
@@ -165,9 +165,9 @@ The client sends these assertion parameters inside the JSON payload:
 
 #### Cryptographic Binding & Signing Requirements
 
-1. **Signing Key & Algorithm**: The key-possession assertion **MUST** be signed using a private key whose public key counterpart is published at the client's `jwks_uri`. The signature algorithm (`alg`) **MUST** be an approved digital signature algorithm (e.g. `ES384` or `RS384`).
-2. **Key Identification (`kid`)**: The JWT JOSE header **MUST** include a `kid` parameter matching the key identifier of the active public key in the client's JWKS.
-3. **Payload Binding**: To cryptographically bind the proof of possession to the specific registration transaction and prevent token replay or payload substitution, the key-possession JWT **MUST** bind the target Data Holder's endpoint URL and **SHOULD** include a SHA-256 hash of the `software_statement` JWT being presented.
+1. **Signing Key & Algorithm**: The key-possession assertion **SHALL** be signed using a private key whose public key counterpart is published at the client's `jwks_uri`. The signature algorithm (`alg`) **SHALL** be an approved digital signature algorithm (e.g. `ES384` or `RS384`).
+2. **Key Identification (`kid`)**: The JWT JOSE header **SHALL** include a `kid` parameter matching the key identifier of the active public key in the client's JWKS.
+3. **Payload Binding**: To cryptographically bind the proof of possession to the specific registration transaction and prevent token replay or payload substitution, the key-possession JWT **SHALL** bind the target Data Holder's endpoint URL and **SHOULD** include a SHA-256 hash of the `software_statement` JWT being presented.
 
 #### Key-Possession JOSE Header Parameters
 
@@ -248,9 +248,9 @@ Upon receiving a dynamic registration request (`POST /register`), the Data Holde
 | `client_assertion` | **SHALL** | String (JWT) | Body | Compact serialized key-possession proof JWT signed by the client's private key matching `jwks_uri`. |
 | `grant_types` | **SHALL** | Array of Strings | Body | Requested OAuth 2.0 grant types (e.g. `["authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:token-exchange"]`). **MUST** be a subset of `grant_types` in `software_statement`. If set to `[]`, the registration SHALL be canceled. |
 | `token_endpoint_auth_method` | **SHALL** | String | Body | Client authentication method. **MUST** be `private_key_jwt`. |
-| `client_id` | **OPTIONAL** | String | Body | Previously issued client identifier. If present during re-registration, Data Holder MUST verify it matches the registered `software_id`. |
-| `scope` | **OPTIONAL** | String | Body | Space-delimited list of requested SMART and system scopes (e.g. `patient/*.rs system/Patient.rs launch/patient openid fhirUser`). If omitted, Data Holder SHOULD default to maximum allowed scopes for the `app_class`. |
-| `redirect_uris` | **CONDITIONALLY REQUIRED** | Array of Strings | Body | Array of redirection URIs. **REQUIRED** if `authorization_code` is included in `grant_types`. Data Holders **SHOULD NOT** allow authorization code grant execution if `redirect_uris` is omitted. |
+| `client_id` | **MAY** | String | Body | Previously issued client identifier. If present during re-registration, Data Holder MUST verify it matches the registered `software_id`. |
+| `scope` | **MAY** | String | Body | Space-delimited list of requested SMART and system scopes (e.g. `patient/*.rs system/Patient.rs launch/patient openid fhirUser`). If omitted, Data Holder SHOULD default to maximum allowed scopes for the `app_class`. |
+| `redirect_uris` | **CONDITIONALLY SHALL** | Array of Strings | Body | Array of redirection URIs. **REQUIRED** if `authorization_code` is included in `grant_types`. Data Holders **SHOULD NOT** allow authorization code grant execution if `redirect_uris` is omitted. |
 
 #### Example Registration Request
 
@@ -293,7 +293,7 @@ Upon successful validation of the software statement, key-possession proof, and 
 | `token_endpoint_auth_method` | **SHALL** | String | Authenticating method (e.g., `private_key_jwt`). |
 | `jwks_uri` | **SHALL** | String (URL) | The verified `jwks_uri` bound to the client registration. |
 | `scope` | **SHALL** | String | Space-delimited list of registered/granted SMART scopes. |
-| `redirect_uris` | **CONDITIONALLY REQUIRED** | Array of Strings | Registered redirection URIs for `authorization_code` flows. |
+| `redirect_uris` | **CONDITIONALLY SHALL** | Array of Strings | Registered redirection URIs for `authorization_code` flows. |
 
 #### Example Registration Response
 
@@ -319,37 +319,47 @@ Cache-Control: no-store
   ]
 }
 ```
+1. **Extract Assertion Parameters**: Read `client_assertion_type` and `client_assertion` from the JSON request body. If either parameter is missing or malformed, the Data Holder **SHALL** reject the request with `HTTP 400 Bad Request` (`error="invalid_request"`).
+2. **Verify Assertion Type**: Confirm `client_assertion_type` is `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`.
+3. **Verify Key-Possession JWT**:
+   - Resolve the client's `jwks_uri` from the submitted `software_statement`.
+   - Fetch the client's JWKS and locate the public key matching the `kid` in the key-possession JWT header.
+   - Verify the digital signature of `client_assertion`.
+   - Confirm `iss` and `sub` match `software_id` in `software_statement`.
+   - Confirm `aud` matches the Data Holder's `/register` endpoint URL.
+   - Confirm current time is within `iat` and `exp` lifetime window (maximum 5-minute lifespan).
+   - If claim validation, signature check, or key resolution fails, the Data Holder **SHALL** reject the request with `HTTP 400 Bad Request` (`error="invalid_client_metadata"` or `error="unauthorized_client"`).
 
 ---
 
-## Data Holder .well-known Requirements
+### Data Holder `.well-known` Configuration Requirements
 
-To enable discovery of dynamic client registration and authorization parameters by Client Applications, Data Holders **SHALL** publish standard discovery documents:
+Data Holders **SHALL** publish their dynamic client registration endpoint and capabilities in standard OAuth 2.0 / OpenID Connect discovery documents:
 
-1. **`.well-known/openid-configuration` & `.well-known/oauth-authorization-server`**:
-   - `registration_endpoint`: **MUST** contain the absolute URL of the Data Holder's RFC 7591 dynamic client registration endpoint (e.g., `https://dataholder.example.org/oauth/register`).
-   - `grant_types_supported`: **MUST** include `authorization_code`, `refresh_token`, and `urn:ietf:params:oauth:grant-type:token-exchange`. Additionally, `grant_types_supported` **MUST** include `client_credentials` if the Data Holder exposes its Record Location Service (RLS) / Patient Discovery endpoint directly.
-   - `token_endpoint_auth_methods_supported`: **MUST** include `private_key_jwt`.
+1. **OAuth 2.0 Authorization Server Metadata (`.well-known/oauth-authorization-server`)**:
+   - `registration_endpoint`: **SHALL** contain the absolute URL of the Data Holder's RFC 7591 dynamic client registration endpoint (e.g., `https://dataholder.example.org/oauth/register`).
+   - `grant_types_supported`: **SHALL** include `authorization_code`, `refresh_token`, and `urn:ietf:params:oauth:grant-type:token-exchange`. Additionally, `grant_types_supported` **SHALL** include `client_credentials` if the Data Holder exposes its Record Location Service (RLS) / Patient Discovery endpoint directly.
+   - `token_endpoint_auth_methods_supported`: **SHALL** include `private_key_jwt`.
 
-2. **`.well-known/smart-configuration` (SMART on FHIR Discovery)**:
-   - Data Holders **SHALL** publish `.well-known/smart-configuration` at the FHIR root URL configured with the relevant metadata elements to support SMART authorization, silent token exchange, and dynamic registration:
-     - `token_endpoint`: **MUST** contain the absolute URL of the OAuth 2.0 token endpoint (e.g., `https://dataholder.example.org/oauth/token`).
-     - `authorization_endpoint`: **MUST** contain the absolute URL of the OAuth 2.0 authorization endpoint (e.g., `https://dataholder.example.org/oauth/authorize`).
-     - `registration_endpoint`: **MUST** contain the absolute URL of the RFC 7591 dynamic client registration endpoint.
-     - `grant_types_supported`: **MUST** include `authorization_code`, `refresh_token`, and `urn:ietf:params:oauth:grant-type:token-exchange` (and `client_credentials` if RLS is exposed directly).
-     - `token_endpoint_auth_methods_supported`: **MUST** include `private_key_jwt`.
-     - `capabilities`: **MUST** include `launch-standalone`, `client-confidential-symmetric` (or key-based auth), `permission-v2`, `context-standalone-patient`, and `permission-offline` (if refresh tokens are supported for offline access).
-     - `scopes_supported`: **MUST** include supported SMART v2 scopes (e.g. `patient/*.rs`, `user/*.rs`, `openid`, `fhirUser`, `offline_access`).
+2. **OpenID Provider Configuration Information (`.well-known/openid-configuration`)**:
+   - **SHALL** mirror all parameters listed above, and specifically include:
+     - `token_endpoint`: **SHALL** contain the absolute URL of the OAuth 2.0 token endpoint (e.g., `https://dataholder.example.org/oauth/token`).
+     - `authorization_endpoint`: **SHALL** contain the absolute URL of the OAuth 2.0 authorization endpoint (e.g., `https://dataholder.example.org/oauth/authorize`).
+     - `registration_endpoint`: **SHALL** contain the absolute URL of the RFC 7591 dynamic client registration endpoint.
+     - `grant_types_supported`: **SHALL** include `authorization_code`, `refresh_token`, and `urn:ietf:params:oauth:grant-type:token-exchange` (and `client_credentials` if RLS is exposed directly).
+     - `token_endpoint_auth_methods_supported`: **SHALL** include `private_key_jwt`.
+     - `capabilities`: **SHALL** include `launch-standalone`, `client-confidential-symmetric` (or key-based auth), `permission-v2`, `context-standalone-patient`, and `permission-offline` (if refresh tokens are supported for offline access).
+     - `scopes_supported`: **SHALL** include supported SMART v2 scopes (e.g. `patient/*.rs`, `user/*.rs`, `openid`, `fhirUser`, `offline_access`).
 
 ---
 
-## Registration Updates and Key Rotation Lifecycle
+### Key Rotation & Metadata Updates
 
-### Zero-Downtime Key Rotation (Out-of-Band)
+#### Public Key Rotation (`jwks_uri`)
 
-Because client authentication uses `private_key_jwt` and references `jwks_uri`, key rotation **DOES NOT** require re-registration or updates to the Data Holder's database:
+Client Applications manage cryptographic key rotation seamlessly through their `jwks_uri`:
 
-1. The Client Application generates a new key pair.
+1. Key rotation does **not** require re-issuing software statements or re-registering with Data Holders.
 2. The Client Application publishes the new public key alongside existing public keys at its `jwks_uri`.
 3. When requesting access tokens or making registration calls, the Client Application signs authentication/possession JWTs using the new key's `kid`.
 4. The Data Holder fetches the latest JWKS from `jwks_uri`, resolves the new `kid`, and verifies the signature dynamically.
@@ -359,8 +369,8 @@ Because client authentication uses `private_key_jwt` and references `jwks_uri`, 
 If a Client Application's metadata or requested scope set changes (e.g., updated `client_name`, expanded `scope`, or relocated `jwks_uri`), the client **MAY** update its registration by re-submitting an updated registration payload:
 
 1. **Re-registration Submission**: The client issues an HTTP `POST` to `/register` presenting an updated `software_statement` and/or modified `scope`, `grant_types`, and `redirect_uris`. The client MAY include its previously assigned `client_id` in the request body.
-2. **Data Holder Processing & Client ID Persistence**: The Data Holder **SHALL** match the registration request against existing client registrations using `software_id` (or `client_id`), verify the CMS signature and key-possession proof, update client metadata and scopes in its registry, and **MUST** maintain the identical `client_id` binding.
-3. **Registration Cancellation / Deactivation**: If a client sends a registration request containing an empty `grant_types: []` array, the Data Holder **SHALL** interpret this as an explicit request to cancel/deactivate the client's registration and MUST reject subsequent token requests for that `client_id`.
+2. **Data Holder Processing & Client ID Persistence**: The Data Holder **SHALL** match the registration request against existing client registrations using `software_id` (or `client_id`), verify the CMS signature and key-possession proof, update client metadata and scopes in its registry, and **SHALL** maintain the identical `client_id` binding.
+3. **Registration Cancellation / Deactivation**: If a client sends a registration request containing an empty `grant_types: []` array, the Data Holder **SHALL** interpret this as an explicit request to cancel/deactivate the client's registration and **SHALL** reject subsequent token requests for that `client_id`.
 4. **Client Management Endpoints (RFC 7592)**: RFC 7592 client management endpoints (`GET`/`PUT`/`DELETE` `/register/{client_id}`) are **out of scope** at this time. All registration updates and cancellations SHALL be handled via `/register` re-registration calls.
 
 ---
@@ -368,12 +378,13 @@ If a Client Application's metadata or requested scope set changes (e.g., updated
 ## Data Holder Responsibilities (Under Construction)
 
 > [!IMPORTANT]
-> **UNDER CONSTRUCTION**: The operational policies and revocation synchronization protocols surrounding Data Holder verification of software statement lifecycles are actively being refined by the workgroup.
+> **UNDER CONSTRUCTION**: The operational policies and revocation synchronization protocols surrounding Data Holder verification of software statement lifecycles are actively being refined.
 
 ### Verification of Software Statement Validity & Status Synchronization
 
 1. **Ongoing Software Statement Validation**: Data Holders are responsible for verifying the validity and status of a Client Application's `software_statement`.
-2. **Time-To-Live (TTL) & Cache Considerations**: While a `software_statement` carries an explicit expiration timestamp (`exp`), the specific TTL policy across the network (e.g., short-lived 5-minute statements vs. 24-hour statements) is a consideration.
-3. **Revocation & Inactive Application Best Practices**: The workgroup is developing aligned best practices to ensure that if an application's `library_status` is revoked or set to `"inactive"` in the National Provider Directory / CMS App Library, Data Holders can promptly invalidate existing client registrations and block subsequent token exchanges:
-   - Data Holders **SHOULD NOT** rely solely on cached `software_statement` payloads past their `exp` window.
-   - Data Holders **SHOULD** periodically re-verify application status against the directory or check CRL/revocation endpoints provided by CMS.
+2. **Software Statement Expiration**: CMS software statements include explicit `exp` expiration timestamps. Once an assertion expires, Client Applications MUST fetch an updated software statement prior to dynamic registration calls.
+3. **Revocation & Inactive Application Best Practices**: Aligned best practices are under development to ensure that if an application's `library_status` is revoked or set to `"inactive"` in the National Provider Directory / CMS App Library, Data Holders can promptly invalidate existing client registrations and block subsequent token exchanges:
+   - **Verification at Dynamic Registration**: Data Holders MUST verify `library_status == "active"` upon receiving a registration request.
+   - **Periodic Re-verification or Webhooks**: Data Holders MAY periodically check the status of registered applications or process directory revocation feeds to deactivate canceled clients (`grant_types: []`).oints provided by CMS.
+```

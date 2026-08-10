@@ -6,7 +6,7 @@ This section specifies rules and operational guidance for asserting identity cla
 
 ## 1. Verified Claims vs. Disambiguation Claims
 
-When evaluating identity assertions encapsulated in a **SMART Permission Ticket** (specifically within `subject.patient` and `subject_identity_evidence`), Data Holders **MUST** distinguish between verified identity claims established by a Credential Service Provider (CSP) or Identity Provider (IdP) versus supplementary demographic parameters supplied for disambiguation.
+When evaluating identity assertions encapsulated in a **SMART Permission Ticket** (specifically within `subject.patient` and `subject_identity_evidence`), Data Holders **SHALL** distinguish between verified identity claims established by a Credential Service Provider (CSP) or Identity Provider (IdP) versus supplementary demographic parameters supplied for disambiguation.
 
 ### 1.1 Disambiguation Matching Policy
 
