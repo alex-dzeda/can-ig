@@ -388,16 +388,35 @@ If a Client Application's metadata or requested scope set changes (e.g., updated
 
 ---
 
-## Data Holder Responsibilities (Under Construction)
+## Data Holder Responsibilities: Ongoing Verification & Revocation Synchronization
 
-> [!IMPORTANT]
-> **UNDER CONSTRUCTION**: The operational policies and revocation synchronization protocols surrounding Data Holder verification of software statement lifecycles are actively being refined.
+Data Holders **SHALL** enforce ongoing verification of registered Client Applications to ensure that revoked or compromised software statements are promptly decommissioned, mitigating stale registration risks without degrading system performance during routine token exchanges.
 
-### Verification of Software Statement Validity & Status Synchronization
+### Software Statement Validity & Lifespan Bounds
 
-1. **Ongoing Software Statement Validation**: Data Holders are responsible for verifying the validity and status of a Client Application's `software_statement`.
-2. **Software Statement Expiration**: CMS software statements include explicit `exp` expiration timestamps. Once an assertion expires, Client Applications MUST fetch an updated software statement prior to dynamic registration calls.
-3. **Revocation & Inactive Application Best Practices**: Aligned best practices are under development to ensure that if an application's `library_status` is revoked or set to `"inactive"` in the National Provider Directory / CMS App Library, Data Holders can promptly invalidate existing client registrations and block subsequent token exchanges:
-   - **Verification at Dynamic Registration**: Data Holders MUST verify `library_status == "active"` upon receiving a registration request.
-   - **Periodic Re-verification or Webhooks**: Data Holders MAY periodically check the status of registered applications or process directory revocation feeds to deactivate canceled clients (`grant_types: []`).oints provided by CMS.
+1. **Software Statement Expiration**: CMS Software Statements **SHALL** contain an explicit `exp` claim. The lifespan of a software statement (`exp - iat`) **SHALL NOT** exceed **24 hours** (86,400 seconds).
+2. **Registration Verification**: Upon receiving a dynamic registration request (`POST /register`), Data Holders **SHALL** verify that `extensions.cms_app.library_status` is `"active"` and that the current timestamp is within the validity window defined by `iat` and `exp`.
+
+### Local Caching & Time-To-Live (TTL) Policy
+
+To maintain token exchange performance and isolate authorization endpoints from external network outages, Data Holders **SHALL** cache verified registration metadata locally.
+
+1. **Cache TTL Calculation**: Data Holders **SHALL** set a local registration Cache TTL calculated as `Cache TTL = min(Software_Statement.exp - Current_Time, 4 hours)`.
+2. **Local Cache Execution**: As long as the current timestamp is less than `cached_until` and local `library_status == "active"`, Data Holders **SHALL** process OAuth 2.0 token exchanges (`POST /token`) locally using cached registration metadata without initiating outbound network calls.
+
+### Status Re-Verification (Asynchronous Directory Polling)
+
+When a client's local registration cache expires (`now >= cached_until`), the Data Holder **SHALL** re-verify the application's status before extending token access:
+
+- **Status Endpoint Query**: The Data Holder issues an HTTP `GET` request to the CMS National Provider Directory status endpoint (`GET /app-library/v1/apps/{software_id}/status`).
+- **Response Validation**: If the directory returns `library_status: "active"`, the Data Holder updates the local cache (`cached_until = now + Cache TTL`).
+- **Background Execution**: Data Holders **SHOULD** initiate this status check asynchronously in the background prior to cache expiration to ensure token request performance remains unblocked.
+
+### Automated Revocation Cascade
+
+If status re-verification indicates that an application's `library_status` is no longer `"active"` (e.g., status changed to `"inactive"`, `"revoked"`, or directory returns HTTP 404):
+
+1. **Client Deactivation**: The Data Holder **SHALL** immediately set the local client status to `revoked` / `deactivated`.
+2. **Token Invalidation**: The Data Holder **SHALL** immediately invalidate and revoke all active Refresh Tokens and Access Tokens associated with that `client_id`.
+3. **Rejection of Future Requests**: The Data Holder **SHALL** reject subsequent `POST /token` requests for that `client_id` with `HTTP 401 Unauthorized` (`error="invalid_client"`).
 ```
