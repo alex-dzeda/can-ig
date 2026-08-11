@@ -401,7 +401,7 @@ Data Holders **SHALL** enforce ongoing verification of registered Client Applica
 
 To maintain token exchange performance and isolate authorization endpoints from external network outages, Data Holders **SHALL** cache verified registration metadata locally.
 
-1. **Cache TTL Calculation**: Data Holders **SHALL** set a local registration Cache TTL calculated as `Cache TTL = min(Software_Statement.exp - Current_Time, 4 hours)`.
+1. **Cache TTL Calculation**: Data Holders **SHOULD** set a local registration Cache TTL calculated as `Cache TTL = min(Software_Statement.exp - Current_Time, 4 hours)`.
 2. **Local Cache Execution**: As long as the current timestamp is less than `cached_until` and local `library_status == "active"`, Data Holders **SHALL** process OAuth 2.0 token exchanges (`POST /token`) locally using cached registration metadata without initiating outbound network calls.
 
 ### Status Re-Verification (Asynchronous Directory Polling)
