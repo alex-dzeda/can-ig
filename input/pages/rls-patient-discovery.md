@@ -444,8 +444,8 @@ Content-Type: application/fhir+json;charset=UTF-8
 
 Every execution of the `$match` operation **SHALL** be recorded in an audit trail. Data Holders **SHALL** generate a FHIR `AuditEvent` resource for each Patient Discovery query. 
 
-> [!NOTE]
-> Detailed profiles and implementation guidelines for the `AuditEvent` resource supporting RLS and Patient Discovery will be formally incorporated in a subsequent release.
+> [!IMPORTANT]
+> **UNDER CONSTRUCTION**: Detailed profiles and operational guidelines for `AuditEvent` resources supporting RLS and Patient Discovery are under construction and need to be reconciled with the *CMS Aligned Network Audit Specification*.
 
 Key audit attributes recorded include:
 - **`type`**: Restful Operation (`http://terminology.hl7.org/CodeSystem/audit-event-type` code `rest`).
