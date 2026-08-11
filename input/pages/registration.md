@@ -397,24 +397,23 @@ Data Holders **SHALL** enforce ongoing verification of registered Client Applica
 1. **Software Statement Expiration**: CMS Software Statements **SHALL** contain an explicit `exp` claim. The lifespan of a software statement (`exp - iat`) **SHALL NOT** exceed **24 hours** (86,400 seconds).
 2. **Registration Verification**: Upon receiving a dynamic registration request (`POST /register`), Data Holders **SHALL** verify that `extensions.cms_app.library_status` is `"active"` and that the current timestamp is within the validity window defined by `iat` and `exp`.
 
-### Local Caching & Time-To-Live (TTL) Policy
+### Compressed Bitstring Status List Synchronization (RFC 9493)
 
-To maintain token exchange performance and isolate authorization endpoints from external network outages, Data Holders **SHALL** cache verified registration metadata locally.
+To ensure privacy-preserving status verification and prevent CMS directory endpoint bottlenecks, application revocation status **SHALL** be synchronized using the CMS Compressed Bitstring Status List (`.well-known/status-list.json`).
 
-1. **Cache TTL Calculation**: Data Holders **SHOULD** set a local registration Cache TTL calculated as `Cache TTL = min(Software_Statement.exp - Current_Time, 4 hours)`.
-2. **Local Cache Execution**: As long as the current timestamp is less than `cached_until` and local `library_status == "active"`, Data Holders **SHALL** process OAuth 2.0 token exchanges (`POST /token`) locally using cached registration metadata without initiating outbound network calls.
+1. **Status List Retrieval**: Data Holders **SHALL** fetch and cache the CMS Compressed Bitstring Status List from `https://directory.cms.gov/.well-known/status-list.json` at least once every **60 minutes**.
+2. **Bitwise Status Evaluation**: Data Holders **SHALL** evaluate an application's operational status by performing a 0-millisecond bitwise check matching the `status_list_index` assigned in the application's registration metadata:
+   - **Bit `0` (Active)**: The client's registration remains valid.
+   - **Bit `1` (Revoked/Inactive)**: The client's registration **SHALL** be revoked immediately.
+3. **Local Cache Execution**: As long as the cached status list remains unexpired and the application's bit evaluates to `0`, Data Holders **SHALL** process OAuth 2.0 token exchanges (`POST /token`) locally without initiating outbound network calls.
 
-### Status Re-Verification (Asynchronous Directory Polling)
-
-When a client's local registration cache expires (`now >= cached_until`), the Data Holder **SHALL** re-verify the application's status before extending token access:
-
-- **Status Endpoint Query**: The Data Holder issues an HTTP `GET` request to the CMS National Provider Directory status endpoint (`GET /app-library/v1/apps/{software_id}/status`).
-- **Response Validation**: If the directory returns `library_status: "active"`, the Data Holder updates the local cache (`cached_until = now + Cache TTL`).
-- **Background Execution**: Data Holders **SHOULD** initiate this status check asynchronously in the background prior to cache expiration to ensure token request performance remains unblocked.
+> [!NOTE]
+> **Architectural Discussion Point: Network Failure Handling**:
+> Operational policies for handling network partitions or status list retrieval failures (such as stale status grace windows versus fail-closed cut-offs) have not yet been finalized and remain an active area of network discussion.
 
 ### Automated Revocation Cascade
 
-If status re-verification indicates that an application's `library_status` is no longer `"active"` (e.g., status changed to `"inactive"`, `"revoked"`, or directory returns HTTP 404):
+If the bitstring status list check (or targeted fallback query) indicates that an application's status is no longer active (bit evaluates to `1` or directory returns HTTP 404/revoked):
 
 1. **Client Deactivation**: The Data Holder **SHALL** immediately set the local client status to `revoked` / `deactivated`.
 2. **Token Invalidation**: The Data Holder **SHALL** immediately invalidate and revoke all active Refresh Tokens and Access Tokens associated with that `client_id`.
