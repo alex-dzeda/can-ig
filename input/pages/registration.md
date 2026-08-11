@@ -61,6 +61,21 @@ Because trust in this architecture is anchored in the central CMS-signed Softwar
 > - **Private Key & `kid` Matching**: Client Applications **MUST** sign all `client_assertion` JWTs with a private key whose corresponding public key is published at the app's `jwks_uri`. The JOSE header of the `client_assertion` **MUST** include a `kid` (Key ID) parameter matching the `kid` in the published JWKS.
 > - **Key Rotation**: When rotating public keys at `jwks_uri`, applications SHOULD retain previous public keys for at least 24 hours to prevent registration or authentication failures during key cache propagation.
 
+> [!NOTE]
+> **Architectural Discussion Point: Direct DCR vs. Network Certificate Provisioning (FAST/UDAP Pivot)**:
+> 
+> The current specification defines dynamic client registration directly with individual Data Holders using CMS Software Statements and application-managed `jwks_uri` key possession.
+> 
+> **Why Direct Registration Remains Essential**:
+> Because CMS itself operates as an out-of-band trust anchor—not an operational network node—onboarding to a single network hub does not automatically establish trust with standalone Data Holders or external networks. Direct Dynamic Registration using CMS Software Statements remains the fundamental baseline requirement for universal, cross-network connectivity.
+> 
+> **Pros of the Direct DCR Approach**:
+> - **Zero Certificate Overhead**: Client Applications do not need to manage X.509 Certificate Signing Requests (CSRs) or complex client certificate lifecycles.
+> - **Lightweight Dynamic Onboarding**: Applications can register dynamically with any Data Holder nationwide using standard Web PKI HTTPS and simple `private_key_jwt` signature verification.
+> 
+> **Complementary Network Certificate Provisioning (FAST/UDAP Alignment)**:
+> Rather than completely replacing direct DCR, network certificate provisioning represents a potential complementary pattern: an application uses its CMS Software Statement to register with a specific Network Broker/Hub, which acts as an Intermediate CA to provision an X.509 Client Certificate. Within that specific network or TEFCA ecosystem, the application uses its network-issued certificate for mTLS and FAST/UDAP authentication, reducing repetitive registration overhead while preserving direct DCR for out-of-network Data Holders.
+
 ---
 
 ## Conformance Requirements
