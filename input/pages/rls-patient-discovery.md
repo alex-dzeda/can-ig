@@ -18,7 +18,7 @@ In a CMS-aligned network, discovering where a patient's medical records reside a
 For Individual Access Services (IAS), Patient Applications interact with a **Network-Level Record Locator Service (RLS)**:
 
 - **App Authentication via CSP**: The Client Application authenticates the patient out-of-band using an accredited Credential Service Provider (CSP) or Identity Provider, receiving an OIDC `id_token` asserting the patient's verified identity at IAL2.
-- **System Access Token (Client Credentials)**: To query the Network RLS endpoint, the registered Client Application authenticates at the Network token endpoint using `grant_type=client_credentials` with `private_key_jwt` and requests at least the `system/Patient.rs` scope.
+- **System Access Token & `hl7-b2b` Extension (Client Credentials)**: To query the Network RLS endpoint, the registered Client Application authenticates at the Network token endpoint using `grant_type=client_credentials` with `private_key_jwt` requesting at least the `system/Patient.rs` scope. The presented `client_assertion` **SHALL** include the `hl7-b2b` Authorization Extension Object specifying `purpose_of_use: ["PATRQT"]` (Patient Requested Access) and the requesting application/organization's NPD URI in `organization_id`.
 - **IAS Verification Header (`X-IAS-ID-Token`)**: In the `POST /Patient/$match` request to the Network RLS, the Client Application **SHALL** include an `X-IAS-ID-Token` HTTP header containing the patient's verified OIDC `id_token`. The `aud` claim of this `id_token` **SHALL** contain the application's `software_id` URI.
 - **Match Certainty & `onlyCertainMatches` Semantics**:
   - **When `onlyCertainMatches = true` (Default for Silent Automated Sync)**: The Network RLS **SHALL** return only 100% verified 1-to-1 patient matches (`search.score = 1.0`). If demographic matching yields multiple candidates for a given Data Holder, that Data Holder **SHALL** be suppressed from the response Bundle to prevent wrong-patient data disclosure.
@@ -33,7 +33,7 @@ For Individual Access Services (IAS), Patient Applications interact with a **Net
 For Business-to-Business (B2B) queries (e.g., Provider-to-Provider treatment lookup or Payer-to-Payer coverage checks):
 
 - **Target Endpoints**: Authorized system clients (EHRs, Payers, Connectors) MAY query `$match` either at the Network RLS level or directly at a Data Holder's published `$match` endpoint.
-- **Client Credentials & `hl7-b2b` Extension**: The requesting system authenticates via `grant_type=client_credentials` presenting an RFC 7523 `client_assertion` signed by its registered JWKS key. The `client_assertion` **SHALL** include the `hl7-b2b` Authorization Extension Object specifying `purpose_of_use` (e.g. `["PATRQT"]` or `["TREATMENT"]`) and the requesting organization's NPD URI in `organization_id`.
+- **Client Credentials & `hl7-b2b` Extension**: The requesting system authenticates via `grant_type=client_credentials` presenting an RFC 7523 `client_assertion` signed by its registered JWKS key. The `client_assertion` **SHALL** include the `hl7-b2b` Authorization Extension Object specifying `purpose_of_use` (e.g. `["TREATMENT"]` or `["HPAYMT"]`) and the requesting organization's NPD URI in `organization_id`.
 - **Header Exclusion (Non-Patient Access)**: Non-patient access requests **SHALL NOT** include an `X-IAS-ID-Token` header, as there is no self-authenticating end-user present. Identity authority is asserted purely through the system's `client_credentials` and `hl7-b2b` claims.
 
 ---
@@ -47,7 +47,7 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
 3. **Client Credentials Authentication (`hl7-b2b`)**:
    - Requesters **SHALL** obtain a system access token via `grant_type=client_credentials` using `private_key_jwt` authentication (`client_assertion`).
    - Requesters **SHALL** request at least `system/Patient.rs` in the `scope` parameter.
-   - The `client_assertion` JWT presented during `client_credentials` **SHALL** include the `hl7-b2b` claim formatted with `version: "1"`, `purpose_of_use` (`["PATRQT"]` for IAS discovery, or `["TREATMENT"]` for B2B), and `organization_id` set to the requester's NPD URI.
+   - The `client_assertion` JWT presented during `client_credentials` **SHALL** include the `hl7-b2b` claim formatted with `version: "1"`, `purpose_of_use` (`["PATRQT"]` for IAS discovery, or `["TREATMENT"]`/`["HPAYMT"]` for B2B workflows), and `organization_id` set to the requester's NPD URI.
    - Token endpoints **SHALL NOT** return patient launch context inside system client credentials token responses.
 4. **IAS Identity Header (`X-IAS-ID-Token`)**:
    - For Patient Access (IAS) discovery workflows, the Client Application **SHALL** include the `X-IAS-ID-Token: <jwt>` HTTP header in the `$match` request to the Network RLS endpoint.
@@ -458,4 +458,5 @@ Key audit attributes recorded include:
 ## Points for Discussion
 
 > [!IMPORTANT]
-> **Placement of the ID Token**: The placement of the OIDC `id_token` (e.g. `X-IAS-ID-Token` header) in this workflow is **not finalized** and remains under active consideration. While the verified patient assertion could theoretically be conveyed using SMART Permission Tickets during token exchange, doing so for initial Patient Discovery would result in a clunky, multi-hop interface. Ongoing evaluations are considering the optimal balance between header assertions and ticket-based mechanisms.
+> - **Placement of the ID Token**: The placement of the OIDC `id_token` (e.g. `X-IAS-ID-Token` header) in this workflow is **not finalized** and remains under active consideration. While the verified patient assertion could theoretically be conveyed using SMART Permission Tickets during token exchange, doing so for initial Patient Discovery would result in a clunky, multi-hop interface. Ongoing evaluations are considering the optimal balance between header assertions and ticket-based mechanisms.
+> - **B2B Match Certainty (`onlyCertainMatches`)**: Since there is no interaction potential in automated B2B system-to-system flows to perform real-time patient disambiguation, should B2B discovery workflows strictly mandate `onlyCertainMatches=true` to prevent wrong-patient data exposure?
