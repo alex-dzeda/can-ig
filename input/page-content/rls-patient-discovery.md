@@ -25,6 +25,7 @@ For Individual Access Services (IAS), Patient Applications interact with a **Net
   - **When `onlyCertainMatches = false` (Comprehensive Candidate Search)**: The Network RLS **MAY** return candidate Data Holder entries where matching is potential/ambiguous (`search.score < 1.0`). For ambiguous matches, the `fullUrl` of the Data Holder endpoint is returned, and the entry **SHALL** include the [MatchStatusExtension](StructureDefinition-match-status-extension.html) set to `#multiple-potential` (`http://example.org/fhir/ig/cms-aligned-network-ig/CodeSystem/match-status-cs#multiple-potential`), indicating that interactive patient verification will be required before clinical data access can be granted.
 - **SearchSet Response (`fullUrl`)**: The Network RLS responds with a FHIR `Bundle` of type `searchset`. Every `entry` inside the response Bundle **SHALL** include a valid `fullUrl` element pointing to the absolute FHIR base URL or endpoint of a Data Holder where matching records were found.
 - **Targeted Direct Access Bypass**: If a Patient Application already knows the specific target Data Holder (e.g., selected by the user, discovered via NPD, or associated with a prior claim), the application **bypasses `$match` entirely** and proceeds directly to [Token Exchange (`POST /token`)](getting-access-token.html) at the target Data Holder using a SMART Permission Ticket.
+
 ---
 
 ### B2B & Non-Patient Access Discovery Workflow
