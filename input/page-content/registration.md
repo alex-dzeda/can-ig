@@ -15,6 +15,7 @@ Prior to presenting software statements to individual Data Holders, an applicati
 2. **JWKS & Domain Ownership Verification**: Before any software statement is issued with an `"active"` status, the CMS App Library verifies the application's domain ownership and confirms that its public JSON Web Key Set (JWKS) is published and accessible at the specified `jwks_uri`.
 3. **National Provider Directory Listing**: Once onboarding and JWKS ownership verification are complete, the CMS App Library issues software statements for the application's listing in the national provider directory.
 4. **Direct Dynamic Registration with Key-Possession Proof**: Armed with an active CMS-signed software statement, the Client Application dynamically registers directly with each target Data Holder via RFC 7591, presenting a signed key-possession assertion (`client_assertion` and `client_assertion_type`) in the JSON request body to prove control of the private key matching the app's published `jwks_uri`.
+5. **Network Standing & Out-of-Band Revocation**: CMS continuously verifies application standing out-of-band with aligned networks. If a home network marks an application as no longer in good standing due to instances of actual harm, security breaches, or major compliance failures (as opposed to minor operational disputes), CMS revokes the central CMS-issued software statement and updates the national status list.
 
 ### Protocol Sequence Diagram
 
@@ -41,9 +42,9 @@ end
 group Dynamic Registration (RFC 7591 with Key Possession)
 App -> Directory: Fetch Active CMS-Signed Software Statement
 App -> DH: POST /register { software_statement, client_assertion_type, client_assertion, grant_types, scope }
-DH -> CMS: Verify software_statement Signature via CMS Public JWKS
-DH -> App: Resolve App JWKS from jwks_uri & Verify client_assertion Signature
-DH -> DH: Validate library_status == "active", iat/exp & Extract jwks_uri
+DH -> DH: Validate software_statement (Verify CMS signature, iat/exp, library_status == "active" & extract jwks_uri)
+DH -> App: Fetch App Public JWKS from jwks_uri
+DH -> DH: Validate client_assertion (Verify signature using app JWKS & validate claims)
 DH --> App: HTTP 201 Created { client_id, jwks_uri, grant_types, scope }
 end
 @enduml
@@ -58,7 +59,7 @@ Because trust in this architecture is anchored in the central CMS-signed Softwar
 
 > [!TIP]
 > **Developer Implementation Guidance: JWKS & Key Rotation**:
-> - **Private Key & `kid` Matching**: Client Applications **MUST** sign all `client_assertion` JWTs with a private key whose corresponding public key is published at the app's `jwks_uri`. The JOSE header of the `client_assertion` **MUST** include a `kid` (Key ID) parameter matching the `kid` in the published JWKS.
+> - **Private Key & `kid` Matching**: Client Applications **SHALL** sign all `client_assertion` JWTs with a private key whose corresponding public key is published at the app's `jwks_uri`. The JOSE header of the `client_assertion` **SHALL** include a `kid` (Key ID) parameter matching the `kid` in the published JWKS.
 > - **Key Rotation**: When rotating public keys at `jwks_uri`, applications SHOULD retain previous public keys for at least 24 hours to prevent registration or authentication failures during key cache propagation.
 
 > [!NOTE]
@@ -96,7 +97,7 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
    - The Data Holder **SHALL** verify the key-possession proof in the request body (`client_assertion`) by fetching the public keys from the client's `jwks_uri` (as declared in the software statement) and confirming the `client_assertion` signature.
    - The Data Holder **SHALL** verify that `extensions.cms_app.library_status` is `"active"`.
    - The Data Holder **SHALL** verify that the current timestamp is within the validity window defined by `iat` and `exp`.
-   - The Data Holder **SHALL NOT** grant any `grant_type` in the registration response that is not present in the CMS-Signed `software_statement`. The requested `grant_types` **SHALL** be a subset of or equal to the permitted grant types in the software statement.
+   - The Data Holder **SHALL NOT** grant any `grant_type` in the registration response that is not present in `extensions.cms_app.allowed_grant_types` within the CMS-Signed `software_statement`. The requested `grant_types` **SHALL** be a subset of or equal to `extensions.cms_app.allowed_grant_types`.
    - If `scope` is omitted in the registration request, the Data Holder **SHOULD** default to the maximum permissible SMART scopes allowed for the application's `extensions.cms_app.app_class`.
    - The Data Holder **SHOULD NOT** allow the use of the `authorization_code` grant type if `redirect_uris` is not present in the registration request.
    - If a registration request contains an empty `grant_types` array (e.g., `[]`), the Data Holder **SHALL** cancel/deactivate the client's registration.
@@ -113,9 +114,9 @@ The CMS-Signed Software Statement is a signed JSON Web Token (JWT) issued by the
 
 | Header Parameter | Conformance | Type | Description |
 | :--- | :--- | :--- | :--- |
-| `alg` | **SHALL** | String | Digital signature algorithm. **MUST** be `ES384` or `RS384`. |
+| `alg` | **SHALL** | String | Digital signature algorithm. **SHALL** be `ES384` or `RS384`. |
 | `kid` | **SHALL** | String | Key Identifier corresponding to the CMS signing key in the CMS JWKS. |
-| `typ` | **SHALL** | String | Token type. **MUST** be `JWT`. |
+| `typ` | **SHALL** | String | Token type. **SHALL** be `JWT`. |
 
 ### Software Statement JWT Payload Claims
 
@@ -126,13 +127,13 @@ The CMS-Signed Software Statement is a signed JSON Web Token (JWT) issued by the
 | `client_uri` | **SHOULD** | String (URL) | Home page URL of the client application. |
 | `policy_uri` | **SHOULD** | String (URL) | URL for the application's privacy policy. |
 | `contacts` | **SHALL** | Array of Strings | Array of email addresses for administrative contacts. |
-| `grant_types` | **SHALL** | Array of Strings | Permitted OAuth 2.0 grant types (e.g., `["authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:token-exchange"]`). |
-| `token_endpoint_auth_method` | **SHALL** | String | Client authentication method. **MUST** be `private_key_jwt`. |
+| `token_endpoint_auth_method` | **SHALL** | String | Client authentication method. **SHALL** be `private_key_jwt`. |
 | `jwks_uri` | **SHALL** | String (URL) | Public HTTPS endpoint where the app publishes its JWKS public keys. |
-| `extensions.cms_app` | **SHALL** | Object | CMS-specific metadata object containing app status and classification. |
+| `extensions.cms_app` | **SHALL** | Object | CMS-specific metadata object containing app status, classification, and allowed parameters. |
 | `extensions.cms_app.version` | **SHALL** | String | Specification version (e.g., `"1"`). |
-| `extensions.cms_app.library_status` | **SHALL** | String | CMS verification status. **MUST** be `"active"`. |
+| `extensions.cms_app.library_status` | **SHALL** | String | CMS verification status. **SHALL** be `"active"`. |
 | `extensions.cms_app.app_class` | **SHALL** | String | Classification of the app (e.g., `"patient-access-app"`). |
+| `extensions.cms_app.allowed_grant_types` | **SHALL** | Array of Strings | Permitted OAuth 2.0 grant types allowed by CMS for this application (e.g., `["authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:token-exchange"]`). Requested grant types during registration SHALL be a subset of or equal to this array. |
 | `iss` | **SHALL** | String (URI) | Issuer of the software statement (e.g., `https://library.medicare.gov`). |
 | `sub` | **SHALL** | String (URI) | Subject identifier, matching `software_id`. |
 | `aud` | **SHALL** | String (URI) | Intended audience (e.g., `https://framework.cms.gov/aligned-networks`). |
@@ -151,19 +152,19 @@ The CMS-Signed Software Statement is a signed JSON Web Token (JWT) issued by the
   "contacts": [
     "support@bpbuddy.example"
   ],
-  "grant_types": [
-    "authorization_code",
-    "refresh_token",
-    "client_credentials",
-    "urn:ietf:params:oauth:grant-type:token-exchange"
-  ],
   "token_endpoint_auth_method": "private_key_jwt",
   "jwks_uri": "https://bpbuddy.example/.well-known/jwks.json",
   "extensions": {
     "cms_app": {
       "version": "1",
       "library_status": "active",
-      "app_class": "patient-access-app"
+      "app_class": "patient-access-app",
+      "allowed_grant_types": [
+        "authorization_code",
+        "refresh_token",
+        "client_credentials",
+        "urn:ietf:params:oauth:grant-type:token-exchange"
+      ]
     }
   },
   "iss": "https://library.medicare.gov",
@@ -201,9 +202,9 @@ The client sends these assertion parameters inside the JSON payload:
 
 | Header Parameter | Conformance | Type | Description |
 | :--- | :--- | :--- | :--- |
-| `alg` | **SHALL** | String | Signature algorithm. **MUST** match an algorithm supported by the app's JWKS (e.g., `ES384` or `RS384`). |
+| `alg` | **SHALL** | String | Signature algorithm. **SHALL** match an algorithm supported by the app's JWKS (e.g., `ES384` or `RS384`). |
 | `kid` | **SHALL** | String | Key Identifier of the public key hosted at the app's `jwks_uri`. |
-| `typ` | **SHALL** | String | Token type. **MUST** be `JWT`. |
+| `typ` | **SHALL** | String | Token type. **SHALL** be `JWT`. |
 
 ##### Example Key-Possession JOSE Header
 
@@ -219,13 +220,13 @@ The client sends these assertion parameters inside the JSON payload:
 
 | Claim Name | Conformance | Type | Description |
 | :--- | :--- | :--- | :--- |
-| `iss` | **SHALL** | String (URI) | Issuer of the assertion. **MUST** match the `software_id` claim in the `software_statement`. |
-| `sub` | **SHALL** | String (URI) | Subject of the assertion. **MUST** match the `software_id` claim in the `software_statement`. |
-| `aud` | **SHALL** | String (URI) | Audience of the assertion. **MUST** match the Data Holder's `/register` endpoint URL. |
-| `exp` | **SHALL** | Integer | Epoch timestamp when the assertion expires. **MUST NOT** exceed 5 minutes from `iat`. |
+| `iss` | **SHALL** | String (URI) | Issuer of the assertion. **SHALL** match the `software_id` claim in the `software_statement`. |
+| `sub` | **SHALL** | String (URI) | Subject of the assertion. **SHALL** match the `software_id` claim in the `software_statement`. |
+| `aud` | **SHALL** | String (URI) | Audience of the assertion. **SHALL** match the Data Holder's `/register` endpoint URL. |
+| `exp` | **SHALL** | Integer | Epoch timestamp when the assertion expires. **SHALL NOT** exceed 5 minutes from `iat`. |
 | `iat` | **SHALL** | Integer | Epoch timestamp when the assertion was issued. |
 | `jti` | **SHALL** | String | Unique nonce identifier generated for this registration request to prevent replay. |
-| `software_statement_hash` | **SHOULD** | String | Hex-encoded SHA-256 hash of the compact serialized `software_statement` string included in the request body. |
+| `software_statement_hash` | **SHOULD** | String | Base64URL-encoded SHA-256 hash (without padding) of the compact serialized `software_statement` string included in the request body (following JOSE/RFC 7638 conventions). |
 
 ##### Example Key-Possession Decoded Payload
 
@@ -237,7 +238,7 @@ The client sends these assertion parameters inside the JSON payload:
   "exp": 1781817583,
   "iat": 1781817283,
   "jti": "reg-nonce-88239102-4b2a",
-  "software_statement_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  "software_statement_hash": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
 }
 ```
 
@@ -245,7 +246,7 @@ The client sends these assertion parameters inside the JSON payload:
 
 Upon receiving a dynamic registration request (`POST /register`), the Data Holder **SHALL** perform key-possession verification through the following self-contained steps:
 
-1. **Extract Assertion Parameters**: Read `client_assertion_type` and `client_assertion` from the JSON request body. If either parameter is missing or malformed, the Data Holder **MUST** reject the request with `HTTP 400 Bad Request` (`error="invalid_request"`).
+1. **Extract Assertion Parameters**: Read `client_assertion_type` and `client_assertion` from the JSON request body. If either parameter is missing or malformed, the Data Holder **SHALL** reject the request with `HTTP 400 Bad Request` (`error="invalid_request"`).
 2. **Decode Software Statement**: Parse the `software_statement` parameter from the request body and verify the CMS digital signature using CMS public keys. Extract the verified `software_id` and `jwks_uri`.
 3. **Validate Key-Possession Claims**:
    - Confirm `client_assertion_type` is `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`.
@@ -253,14 +254,14 @@ Upon receiving a dynamic registration request (`POST /register`), the Data Holde
    - Confirm `aud` matches the Data Holder's absolute `/register` endpoint URL.
    - Confirm current time is between `iat` and `exp`, and `exp - iat` $\le 300$ seconds.
    - Confirm `jti` has not been seen previously within the expiration window.
-   - If `software_statement_hash` is present, compute `HEX(SHA256(software_statement))` and verify it matches the claim value.
+   - If `software_statement_hash` is present, compute `BASE64URL(SHA256(software_statement))` and verify it matches the claim value.
 4. **Fetch & Verify Client Signature**:
    - Retrieve the client's public JWKS from the verified `jwks_uri` extracted from the software statement.
    - Locate the public key matching the `kid` specified in the `client_assertion` JOSE header.
    - Validate the signature of the `client_assertion` JWT using the retrieved public key.
 5. **Registration Outcome & Error Codes**:
    - If all steps pass, key possession is proven. The Data Holder proceeds to register or update the client, preserving the existing `client_id` for an updated `software_id`.
-   - If claim validation, signature check, or key resolution fails, the Data Holder **MUST** reject the request with `HTTP 400 Bad Request` (`error="invalid_client_metadata"` or `error="unauthorized_client"`).
+   - If claim validation, signature check, or key resolution fails, the Data Holder **SHALL** reject the request with `HTTP 400 Bad Request` (`error="invalid_client_metadata"` or `error="unauthorized_client"`).
 
 ### HTTP Registration Request
 
@@ -272,11 +273,11 @@ Upon receiving a dynamic registration request (`POST /register`), the Data Holde
 | Parameter | Conformance | Type | Location | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `software_statement` | **SHALL** | String (JWT) | Body | Compact serialized CMS-signed software statement JWT. |
-| `client_assertion_type` | **SHALL** | String (URI) | Body | **MUST** be `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`. |
+| `client_assertion_type` | **SHALL** | String (URI) | Body | **SHALL** be `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`. |
 | `client_assertion` | **SHALL** | String (JWT) | Body | Compact serialized key-possession proof JWT signed by the client's private key matching `jwks_uri`. |
-| `grant_types` | **SHALL** | Array of Strings | Body | Requested OAuth 2.0 grant types (e.g. `["authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:token-exchange"]`). **MUST** be a subset of `grant_types` in `software_statement`. If set to `[]`, the registration SHALL be canceled. |
-| `token_endpoint_auth_method` | **SHALL** | String | Body | Client authentication method. **MUST** be `private_key_jwt`. |
-| `client_id` | **MAY** | String | Body | Previously issued client identifier. If present during re-registration, Data Holder MUST verify it matches the registered `software_id`. |
+| `grant_types` | **SHALL** | Array of Strings | Body | Requested OAuth 2.0 grant types (e.g. `["authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:token-exchange"]`). **SHALL** be a subset of `extensions.cms_app.allowed_grant_types` in `software_statement`. If set to `[]`, the registration SHALL be canceled. |
+| `token_endpoint_auth_method` | **SHALL** | String | Body | Client authentication method. **SHALL** be `private_key_jwt`. |
+| `client_id` | **MAY** | String | Body | Previously issued client identifier. If present during re-registration, the Data Holder **SHALL** verify that it matches the `client_id` previously issued by the Data Holder for the specified `software_id`. |
 | `scope` | **MAY** | String | Body | Space-delimited list of requested SMART and system scopes (e.g. `patient/*.rs system/Patient.rs launch/patient openid fhirUser`). If omitted, Data Holder SHOULD default to maximum allowed scopes for the `app_class`. |
 | `redirect_uris` | **CONDITIONALLY SHALL** | Array of Strings | Body | Array of redirection URIs. **REQUIRED** if `authorization_code` is included in `grant_types`. Data Holders **SHOULD NOT** allow authorization code grant execution if `redirect_uris` is omitted. |
 
@@ -315,9 +316,9 @@ Upon successful validation of the software statement, key-possession proof, and 
 
 | Parameter | Conformance | Type | Description |
 | :--- | :--- | :--- | :--- |
-| `client_id` | **SHALL** | String | Unique client identifier issued by the Data Holder for this client. When updating an existing registration, the Data Holder MUST return the identical `client_id`. |
+| `client_id` | **SHALL** | String | Unique client identifier issued by the Data Holder for this client. When updating an existing registration, the Data Holder **SHALL** return the identical `client_id`. |
 | `software_id` | **SHALL** | String (URI) | The `software_id` extracted from the software statement. |
-| `grant_types` | **SHALL** | Array of Strings | Granted OAuth 2.0 grant types (MUST be a subset of approved `grant_types` in `software_statement`). |
+| `grant_types` | **SHALL** | Array of Strings | Granted OAuth 2.0 grant types (**SHALL** be a subset of `extensions.cms_app.allowed_grant_types` in `software_statement`). |
 | `token_endpoint_auth_method` | **SHALL** | String | Authenticating method (e.g., `private_key_jwt`). |
 | `jwks_uri` | **SHALL** | String (URL) | The verified `jwks_uri` bound to the client registration. |
 | `scope` | **SHALL** | String | Space-delimited list of registered/granted SMART scopes. |
@@ -425,6 +426,14 @@ To ensure privacy-preserving status verification and prevent CMS directory endpo
 > [!NOTE]
 > **Architectural Discussion Point: Network Failure Handling**:
 > Operational policies for handling network partitions or status list retrieval failures (such as stale status grace windows versus fail-closed cut-offs) have not yet been finalized and remain an active area of network discussion.
+
+### Out-of-Band Network Standing & Central Revocation Cascade
+
+CMS maintains out-of-band communication processes with aligned home networks to continuously verify that registered applications maintain good standing across participating network brokers and clearinghouses.
+
+- **Scope & Threshold for Revocation**: Revocation of a CMS-issued Software Statement is strictly reserved for instances of **actual harm, severe security incidents, privacy breaches, or major compliance failures**, rather than minor operational, administrative, or commercial disputes between an application developer and a network.
+- **Central Status List Update**: When a home network reports out-of-band that an application has engaged in conduct causing actual harm or critical security violations, CMS revokes the central Software Statement and flips the application's bit from `0` (Active) to `1` (Revoked) in the CMS Compressed Bitstring Status List (`.well-known/status-list.json`).
+- **Nationwide Enforcement**: Because Data Holders synchronize with the CMS Bitstring Status List, revocation by CMS transparently cascades nationwide to all Data Holders without requiring Data Holders to maintain direct integrations or status checks with individual networks.
 
 ### Automated Revocation Cascade
 
