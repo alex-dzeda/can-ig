@@ -196,7 +196,7 @@ The client sends these assertion parameters inside the JSON payload:
 
 1. **Signing Key & Algorithm**: The key-possession assertion **SHALL** be signed using a private key whose public key counterpart is published at the client's `jwks_uri`. The signature algorithm (`alg`) **SHALL** be an approved digital signature algorithm (e.g. `ES384` or `RS384`).
 2. **Key Identification (`kid`)**: The JWT JOSE header **SHALL** include a `kid` parameter matching the key identifier of the active public key in the client's JWKS.
-3. **Payload Binding**: To cryptographically bind the proof of possession to the specific registration transaction and prevent token replay or payload substitution, the key-possession JWT **SHALL** bind the target Data Holder's endpoint URL and **SHOULD** include a SHA-256 hash of the `software_statement` JWT being presented.
+3. **Payload Binding**: To cryptographically bind the proof of possession to the specific registration transaction and prevent token replay or payload substitution, the key-possession JWT **SHALL** bind the target Data Holder's endpoint URL and **SHALL** include a SHA-256 hash of the `software_statement` JWT being presented.
 
 #### Key-Possession JOSE Header Parameters
 
@@ -226,7 +226,7 @@ The client sends these assertion parameters inside the JSON payload:
 | `exp` | **SHALL** | Integer | Epoch timestamp when the assertion expires. **SHALL NOT** exceed 5 minutes from `iat`. |
 | `iat` | **SHALL** | Integer | Epoch timestamp when the assertion was issued. |
 | `jti` | **SHALL** | String | Unique nonce identifier generated for this registration request to prevent replay. |
-| `software_statement_hash` | **SHOULD** | String | Base64URL-encoded SHA-256 hash (without padding) of the compact serialized `software_statement` string included in the request body (following JOSE/RFC 7638 conventions). |
+| `software_statement_hash` | **SHALL** | String | Base64URL-encoded SHA-256 hash (without padding) of the compact serialized `software_statement` string included in the request body (following JOSE/RFC 7638 conventions). |
 
 ##### Example Key-Possession Decoded Payload
 
