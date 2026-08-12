@@ -101,6 +101,10 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
    - If `scope` is omitted in the registration request, the Data Holder **SHOULD** default to the maximum permissible SMART scopes allowed for the application's `extensions.cms_app.app_class`.
    - The Data Holder **SHOULD NOT** allow the use of the `authorization_code` grant type if `redirect_uris` is not present in the registration request.
    - If a registration request contains an empty `grant_types` array (e.g., `[]`), the Data Holder **SHALL** cancel/deactivate the client's registration.
+
+> [!NOTE]
+> **Architectural Discussion Point: Dynamic Registration Scope Defaulting (Maximum vs. Least Privilege)**:
+> The current specification indicates that if `scope` is omitted during dynamic registration, the Data Holder SHOULD default to the maximum allowed scopes for the application's `extensions.cms_app.app_class`. An open discussion point for network ballot is whether scope defaulting should follow maximum permitted bounds as specified, or adopt strict **least privilege** (e.g., defaulting to minimal baseline scopes or requiring explicit scope declarations during registration).
    - Network Brokers and Data Holders **SHALL** process RFC 7591 dynamic registration requests from any Client Application presenting a valid CMS-signed software statement, regardless of the application's primary network affiliation.
    - Upon successful verification, the Data Holder **SHALL** register or update the client, preserve the existing `client_id` binding if updating an existing `software_id`, and return a JSON response containing `client_id`, `grant_types`, `jwks_uri`, and registered `scope`.
 
@@ -132,7 +136,7 @@ The CMS-Signed Software Statement is a signed JSON Web Token (JWT) issued by the
 | `extensions.cms_app` | **SHALL** | Object | CMS-specific metadata object containing app status, classification, and allowed parameters. |
 | `extensions.cms_app.version` | **SHALL** | String | Specification version (e.g., `"1"`). |
 | `extensions.cms_app.library_status` | **SHALL** | String | CMS verification status. **SHALL** be `"active"`. |
-| `extensions.cms_app.app_class` | **SHALL** | String | Classification of the app (e.g., `"patient-access-app"`). |
+| `extensions.cms_app.app_class` | **SHALL** | String | Classification of the app (e.g., `"patient-access-app"`). Data Holders **MAY** assume `app_class` aligns to an exchange Purpose of Use (PoU) (e.g., `"patient-access-app"` maps to `PATRQT` / Patient Right of Access). |
 | `extensions.cms_app.allowed_grant_types` | **SHALL** | Array of Strings | Permitted OAuth 2.0 grant types allowed by CMS for this application (e.g., `["authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:token-exchange"]`). Requested grant types during registration SHALL be a subset of or equal to this array. |
 | `iss` | **SHALL** | String (URI) | Issuer of the software statement (e.g., `https://library.medicare.gov`). |
 | `sub` | **SHALL** | String (URI) | Subject identifier, matching `software_id`. |
@@ -401,6 +405,10 @@ If a Client Application's metadata or requested scope set changes (e.g., updated
 2. **Data Holder Processing & Client ID Persistence**: The Data Holder **SHALL** match the registration request against existing client registrations using `software_id` (or `client_id`), verify the CMS signature and key-possession proof, update client metadata and scopes in its registry, and **SHALL** maintain the identical `client_id` binding.
 3. **Registration Cancellation / Deactivation**: If a client sends a registration request containing an empty `grant_types: []` array, the Data Holder **SHALL** interpret this as an explicit request to cancel/deactivate the client's registration and **SHALL** reject subsequent token requests for that `client_id`.
 4. **Client Management Endpoints (RFC 7592)**: RFC 7592 client management endpoints (`GET`/`PUT`/`DELETE` `/register/{client_id}`) are **out of scope** at this time. All registration updates and cancellations SHALL be handled via `/register` re-registration calls.
+
+> [!NOTE]
+> **Architectural Discussion Point: Registration Cancellation via Empty `grant_types: []` Array (SSRAA IG Alignment)**:
+> The specification defines registration cancellation via sending an empty `grant_types: []` array in a `/register` re-registration request. This mechanism directly mirrors the registration cancellation protocol defined in the **HL7 Security for Scalable Registration, Authentication, and Authorization (SSRAA) IG** (UDAP Security IG). An open discussion point for implementers is whether to standardize solely on this SSRAA pattern or also support explicit RFC 7592 `DELETE` client management endpoints in future releases.
 
 ---
 

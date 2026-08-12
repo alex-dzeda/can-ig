@@ -174,7 +174,7 @@ Client Applications **SHALL** make an HTTP `POST` request to the Data Holder's t
 | `subject_token` | **SHALL** | String (JWT) | The signed SMART Permission Ticket JWT (containing `subject.patient`, `smart_scopes`, `presenter_binding`, and `subject_identity_evidence`). |
 | `subject_token_type` | **SHALL** | String | **MUST** be `https://smarthealthit.org/token-type/permission-ticket` (or `urn:ietf:params:oauth:token-type:jwt`). |
 | `client_assertion_type` | **SHALL** | String | **MUST** be `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`. |
-| `client_assertion` | **SHALL** | String (JWT) | Signed JWT for client authentication (`private_key_jwt`). MUST contain `iss` and `sub` set to `client_id`, `aud` set to token endpoint URL, short `exp` ($\le$ 5 min), and unique `jti`. Key used for signature MUST match `presenter_binding.jkt`. |
+| `client_assertion` | **SHALL** | String (JWT) | Signed JWT for client authentication (`private_key_jwt`). MUST contain `iss` and `sub` set to `client_id` (bound during dynamic registration to the application's canonical `software_id` URI from the CMS Software Statement), `aud` set to the Data Holder's `/token` endpoint URL, short `exp` ($\le$ 5 min), and unique `jti`. The key used for signature MUST match `presenter_binding.jkt`. |
 | `scope` | **MAY** | String | Requested SMART scopes (e.g. `patient/*.rs`). Granted scopes MUST NOT exceed ticket `smart_scopes` or client registration, but Data Holders MAY issue additional baseline scopes (e.g. `openid`). |
 
 ##### Example Token Exchange Request
