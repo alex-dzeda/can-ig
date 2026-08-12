@@ -14,7 +14,7 @@ Prior to presenting software statements to individual Data Holders, an applicati
 1. **Onboarding & Home Network Registration**: The application developer registers their organization and application out-of-band with the CMS App Library and designates an accredited CMS-aligned home network. Upon initial intake submission, the CMS App Library MAY issue a CMS Software Statement with a `"provisional"` status (`extensions.cms_app.library_status: "provisional"`).
 2. **JWKS & Domain Ownership Verification & Home Network Claiming**: Before any software statement is issued with an `"active"` status (`extensions.cms_app.library_status: "active"`), the CMS App Library verifies the application's domain ownership, confirms that its public JSON Web Key Set (JWKS) is published and accessible at the specified `jwks_uri`, and verifies that the designated home network has claimed the application's `software_id` as belonging to their network and in good standing.
 3. **National Provider Directory Listing**: Once domain/JWKS ownership verification and home network confirmation are complete, the CMS App Library updates `library_status` to `"active"` and publishes active software statements for the application's listing in the national provider directory.
-4. **Direct Dynamic Registration with Key-Possession Proof**: Armed with an active CMS-signed software statement (`library_status == "active"`), the Client Application dynamically registers directly with each target Data Holder via RFC 7591, presenting a signed key-possession assertion (`client_assertion` and `client_assertion_type`) in the JSON request body to prove control of the private key matching the app's published `jwks_uri`.
+4. **Direct Dynamic Registration with Key-Possession Proof**: Armed with an active CMS-signed software statement (`library_status == "active"`), the Client Application fetches the Data Holder's SMART Configuration metadata (`.well-known/smart-configuration`) to discover the `registration_endpoint` and the list of available scopes (`scopes_supported`). The Client Application then dynamically registers directly with the Data Holder via RFC 7591, presenting a signed key-possession assertion (`client_assertion` and `client_assertion_type`) in the JSON request body to prove control of the private key matching the app's published `jwks_uri`.
 5. **Network Standing & Out-of-Band Revocation**: CMS continuously verifies application standing out-of-band with aligned networks. If a home network marks an application as no longer in good standing due to instances of actual harm, security breaches, or major compliance failures (as opposed to minor operational disputes), CMS revokes the central CMS-issued software statement and updates the national status list.
 
 ### Protocol Sequence Diagram
@@ -43,11 +43,13 @@ CMS -> Directory: Publish Approved App Listing & Issue Active Software Statement
 end
 
 group Dynamic Registration (RFC 7591 with Key Possession)
+App -> DH: GET /.well-known/smart-configuration
+DH --> App: Return SMART Metadata { registration_endpoint, scopes_supported }
 App -> Directory: Fetch Active CMS-Signed Software Statement
 App -> DH: POST /register { software_statement, client_assertion_type, client_assertion, grant_types, scope }
 DH -> DH: Validate software_statement (Verify CMS signature, iat/exp, library_status == "active" & extract jwks_uri)
 DH -> App: Fetch App Public JWKS from jwks_uri
-DH -> DH: Validate client_assertion (Verify signature using app JWKS & validate claims)
+DH -> DH: Validate client_assertion & apply least-privilege scope evaluation
 DH --> App: HTTP 201 Created { client_id, jwks_uri, grant_types, scope }
 end
 @enduml
@@ -89,6 +91,7 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
 1. **Client Application Requirements**:
    - The Client Application **SHALL** complete out-of-band onboarding and JWKS ownership verification with the CMS App Library.
    - The Client Application **SHALL** obtain a valid, short-lived CMS-Signed Software Statement JWT from its approved listing in the national provider directory.
+   - The Client Application **SHALL** fetch the Data Holder's `.well-known/smart-configuration` (or `.well-known/openid-configuration`) document to discover `registration_endpoint` and `scopes_supported` prior to dynamic registration.
    - The Client Application **SHALL** present this software statement to each target Data Holder's OAuth 2.0 Dynamic Client Registration endpoint (`/register`).
    - The Client Application **SHALL** prove key possession during registration by including `client_assertion` and `client_assertion_type: urn:ietf:params:oauth:client-assertion-type:jwt-bearer` parameters in the JSON request body, signed with a private key whose corresponding public key is published at the app's `jwks_uri`.
    - The Client Application **SHALL** maintain its published JWKS at the verified `jwks_uri` endpoint.
@@ -101,13 +104,13 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
    - The Data Holder **SHALL** verify that `extensions.cms_app.library_status` is `"active"`.
    - The Data Holder **SHALL** verify that the current timestamp is within the validity window defined by `iat` and `exp`.
    - The Data Holder **SHALL NOT** grant any `grant_type` in the registration response that is not present in `extensions.cms_app.allowed_grant_types` within the CMS-Signed `software_statement`. The requested `grant_types` **SHALL** be a subset of or equal to `extensions.cms_app.allowed_grant_types`.
-   - If `scope` is omitted in the registration request, the Data Holder **SHOULD** default to the maximum permissible SMART scopes allowed for the application's `extensions.cms_app.app_class`.
+   - If `scope` is omitted in the registration request, the Data Holder **SHALL** follow the principle of **least privilege**, defaulting to minimal baseline scopes (e.g., `openid fhirUser` or an empty scope set) rather than maximum allowed scopes.
    - The Data Holder **SHOULD NOT** allow the use of the `authorization_code` grant type if `redirect_uris` is not present in the registration request.
    - If a registration request contains an empty `grant_types` array (e.g., `[]`), the Data Holder **SHALL** cancel/deactivate the client's registration.
 
 > [!NOTE]
-> **Architectural Discussion Point: Dynamic Registration Scope Defaulting (Maximum vs. Least Privilege)**:
-> The current specification indicates that if `scope` is omitted during dynamic registration, the Data Holder SHOULD default to the maximum allowed scopes for the application's `extensions.cms_app.app_class`. An open architectural discussion point is whether scope defaulting should follow maximum permitted bounds as specified, or adopt strict **least privilege** (e.g., defaulting to minimal baseline scopes or requiring explicit scope declarations during registration).
+> **Architectural Resolution: Least Privilege Scope Defaulting**:
+> To enforce zero-trust security and prevent unintended data exposure, dynamic client registration scope defaulting follows the principle of **least privilege**. If a Client Application omits the `scope` parameter during dynamic registration, the Data Holder SHALL NOT default to maximum permitted scopes for the `app_class`, but MUST grant only minimal baseline scopes (or require explicit scope declarations during registration).
    - Network Brokers and Data Holders **SHALL** process RFC 7591 dynamic registration requests from any Client Application presenting a valid CMS-signed software statement, regardless of the application's primary network affiliation.
    - Upon successful verification, the Data Holder **SHALL** register or update the client, preserve the existing `client_id` binding if updating an existing `software_id`, and return a JSON response containing `client_id`, `grant_types`, `jwks_uri`, and registered `scope`.
 
