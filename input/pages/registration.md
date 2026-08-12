@@ -11,10 +11,10 @@ Registration **SHALL** be completed via direct presentation of a CMS Software St
 Prior to presenting software statements to individual Data Holders, an application developer undergoes an out-of-band onboarding process with the **CMS App Library**, which includes onboarding to a designated home network.
 
 ### Out-of-Band Onboarding & JWKS Ownership Verification
-1. **Onboarding & Home Network Registration**: The application developer registers their organization and application out-of-band with the CMS App Library and joins a CMS-aligned home network.
-2. **JWKS & Domain Ownership Verification**: Before any software statement is issued with an `"active"` status, the CMS App Library verifies the application's domain ownership and confirms that its public JSON Web Key Set (JWKS) is published and accessible at the specified `jwks_uri`.
-3. **National Provider Directory Listing**: Once onboarding and JWKS ownership verification are complete, the CMS App Library issues software statements for the application's listing in the national provider directory.
-4. **Direct Dynamic Registration with Key-Possession Proof**: Armed with an active CMS-signed software statement, the Client Application dynamically registers directly with each target Data Holder via RFC 7591, presenting a signed key-possession assertion (`client_assertion` and `client_assertion_type`) in the JSON request body to prove control of the private key matching the app's published `jwks_uri`.
+1. **Onboarding & Home Network Registration**: The application developer registers their organization and application out-of-band with the CMS App Library and designates an accredited CMS-aligned home network. Upon initial intake submission, the CMS App Library MAY issue a CMS Software Statement with a `"provisional"` status (`extensions.cms_app.library_status: "provisional"`).
+2. **JWKS & Domain Ownership Verification & Home Network Claiming**: Before any software statement is issued with an `"active"` status (`extensions.cms_app.library_status: "active"`), the CMS App Library verifies the application's domain ownership, confirms that its public JSON Web Key Set (JWKS) is published and accessible at the specified `jwks_uri`, and verifies that the designated home network has claimed the application's `software_id` as belonging to their network and in good standing.
+3. **National Provider Directory Listing**: Once domain/JWKS ownership verification and home network confirmation are complete, the CMS App Library updates `library_status` to `"active"` and publishes active software statements for the application's listing in the national provider directory.
+4. **Direct Dynamic Registration with Key-Possession Proof**: Armed with an active CMS-signed software statement (`library_status == "active"`), the Client Application dynamically registers directly with each target Data Holder via RFC 7591, presenting a signed key-possession assertion (`client_assertion` and `client_assertion_type`) in the JSON request body to prove control of the private key matching the app's published `jwks_uri`.
 5. **Network Standing & Out-of-Band Revocation**: CMS continuously verifies application standing out-of-band with aligned networks. If a home network marks an application as no longer in good standing due to instances of actual harm, security breaches, or major compliance failures (as opposed to minor operational disputes), CMS revokes the central CMS-issued software statement and updates the national status list.
 
 ### Protocol Sequence Diagram
@@ -29,14 +29,17 @@ scale max 1000 width
 autonumber
 actor "App Developer / App" as App
 participant "CMS App Library" as CMS
+participant "Home Network" as Network
 participant "National Provider Directory" as Directory
 participant "Data Holder /register" as DH
 
 group Out-of-Band Onboarding & Verification
-App -> CMS: Out-of-Band Onboarding & Home Network Onboarding Request
+App -> CMS: Out-of-Band Intake & Home Network Selection Request
+CMS -> App: Issue Provisional Software Statement (library_status = "provisional")
 App -> App: Host JWKS Public Keys at jwks_uri
 CMS -> App: Verify Domain & JWKS Endpoint Ownership
-CMS -> Directory: Publish Approved App Listing & Issue Software Statement
+Network -> CMS: Confirm App Claim & Good Standing
+CMS -> Directory: Publish Approved App Listing & Issue Active Software Statement (library_status = "active")
 end
 
 group Dynamic Registration (RFC 7591 with Key Possession)
@@ -104,7 +107,7 @@ The official key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL 
 
 > [!NOTE]
 > **Architectural Discussion Point: Dynamic Registration Scope Defaulting (Maximum vs. Least Privilege)**:
-> The current specification indicates that if `scope` is omitted during dynamic registration, the Data Holder SHOULD default to the maximum allowed scopes for the application's `extensions.cms_app.app_class`. An open discussion point for network ballot is whether scope defaulting should follow maximum permitted bounds as specified, or adopt strict **least privilege** (e.g., defaulting to minimal baseline scopes or requiring explicit scope declarations during registration).
+> The current specification indicates that if `scope` is omitted during dynamic registration, the Data Holder SHOULD default to the maximum allowed scopes for the application's `extensions.cms_app.app_class`. An open architectural discussion point is whether scope defaulting should follow maximum permitted bounds as specified, or adopt strict **least privilege** (e.g., defaulting to minimal baseline scopes or requiring explicit scope declarations during registration).
    - Network Brokers and Data Holders **SHALL** process RFC 7591 dynamic registration requests from any Client Application presenting a valid CMS-signed software statement, regardless of the application's primary network affiliation.
    - Upon successful verification, the Data Holder **SHALL** register or update the client, preserve the existing `client_id` binding if updating an existing `software_id`, and return a JSON response containing `client_id`, `grant_types`, `jwks_uri`, and registered `scope`.
 
