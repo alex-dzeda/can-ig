@@ -41,7 +41,7 @@ autonumber
 actor "App Developer / App" as App
 participant "CMS App Library & TA" as CMS
 participant "Home Network Authority" as Network
-participant "Data Holder /token & /register" as DH
+participant "Data Holder /register" as DH
 
 group Phase 1: CMS Base Onboarding & Network Delegation
 App -> CMS: Submit Software Information & App-Hosted jwks_uri
@@ -52,40 +52,25 @@ Network -> Network: Verify CMS Signature & Confirm Network Standing
 Network -> App: Issue Network-Delegated Statement (Network_Delegated_Statement)
 end
 
-group Phase 2: OpenID Federation Dynamic Registration & Token Exchange
-alt Direct Token Exchange Access Request (RFC 8693)
-App -> DH: POST /token { grant_type: token-exchange, subject_token, trust_chain, client_assertion }
-DH -> DH: Validate 3-Tier Trust Chain (CMS Root Anchor -> Network -> App)
-DH -> DH: Verify App Key Possession via client_assertion against App jwks_uri
-DH --> App: HTTP 200 OK { access_token }
-else Explicit Registration Pattern (RFC 7591)
+group Phase 2: OpenID Federation Dynamic Registration (Explicit Model)
 App -> DH: POST /register { trust_chain: [App_EC, Network_Delegated_Statement, CMS_Network_Accreditation], client_assertion }
 DH -> DH: Validate Linear 3-Tier Trust Chain (CMS Root Anchor -> Network -> App)
+DH -> DH: Verify App Key Possession via client_assertion against App jwks_uri
 DH --> App: HTTP 201 Created { client_id: "dh-assigned-88192" }
-end
 end
 @enduml
 ```
 
 ---
 
-## Supported Dynamic Registration Patterns
+## Dynamic Registration Architectural Scope
 
-OpenID Federation 1.0 natively supports two operational registration patterns depending on Data Holder gateway requirements:
+OpenID Federation 1.0 natively supports two operational registration patterns:
 
-### Pattern A: Automatic Client Registration (Stateless Model)
-* **Zero Pre-Registration**: The client application **SHALL NOT** execute a `POST /register` pre-flight call.
-* **Entity ID as `client_id`**: The application **SHALL** use its canonical CMS Entity ID (`https://library.medicare.gov/apps/bpbuddy`) directly as its `client_id` in token requests.
+* **Explicit Client Registration (Stateful Governance Model — IN SCOPE)**: The client application **SHALL** execute a standard `POST /register` call (RFC 7591) presenting its 3-tier `trust_chain` and proof-of-possession `client_assertion` to receive a server-assigned `client_id`.
+* **Automatic Client Registration (Stateless Model — OUT OF SCOPE)**: While OpenID Federation 1.0 natively allows stateless automatic registration during token requests without pre-registration, this pattern is marked as **Out of Scope** for the current version of this specification to focus on establishing foundational explicit registration patterns before introducing stateless token-exchange models.
 
-> [!IMPORTANT]
-> **Authorization Code Scope Limitation**: Pattern A (Automatic Registration) is designed for direct backend-to-backend Token Exchange (`RFC 8693`) and Client Credentials flows. Implementers **SHALL NOT** consider Pattern A for front-channel `authorization_code` browser redirect flows until the SMART App Launch framework formally incorporates Pushed Authorization Requests (PAR / RFC 9126) to securely validate `redirect_uri` prior to consent screen rendering. For `authorization_code` flows, implementers **SHALL** use **Pattern B (Explicit Registration)**.
-
-> [!TIP]
-> **Caching Recommendation**: Data Holders validating trust chains in Pattern A can cache the verified App JWK locally for up to 24 hours. Subsequent token requests from the same application can evaluate incoming `client_assertion` signatures against the cached key without database writes or out-of-band network calls.
-
-### Pattern B: Explicit Client Registration (Stateful Governance Model)
-* **One-Time Registration (`POST /register`)**: For health systems requiring administrative dashboard visibility, custom rate-limiting buckets, or local scope overrides, the application **SHALL** present its `trust_chain` to `POST /register` via standard RFC 7591.
-* **Persistent `client_id`**: The Data Holder **SHALL** create a stateful database record and return a persistent server-assigned `client_id`.
+Implementers **SHALL** use **Explicit Client Registration (`POST /register`)**.
 
 ---
 
@@ -226,7 +211,7 @@ Issued by the CMS Trust Anchor (`https://library.cms.gov`) to accredit Home Netw
 | `sub` | **SHALL** | String (URI) | Subject Home Network Entity ID (**SHALL** match accredited Home Network URL). |
 | `iat` | **SHALL** | Integer | Epoch timestamp when statement was issued. |
 | `exp` | **SHALL** | Integer | Epoch timestamp when statement expires. |
-| `jwks` | **SHALL** | Object (JWKS) | Home Network's public key set (OpenID Federation 1.0 Section 3.1 normative claim). Can contain multiple keys (`[old_key, new_key]`) for zero-downtime rotation. |
+| `jwks` | **SHALL** | Object (JWKS) | Home Network's public key set. Can contain multiple keys (`[old_key, new_key]`) for zero-downtime rotation. |
 | `authority_hints` | **SHALL** | Array of Strings | **SHALL** contain `["https://library.cms.gov"]`. |
 | `constraints` | **MAY** | Object | OpenID Federation path length restrictions (`max_path_length`) and entity type constraints (`allowed_entity_types`). |
 
@@ -516,55 +501,14 @@ To prove possession of the private key matching the public key published at `jwk
 
 ## Concrete End-to-End Registration Examples
 
-Below are concrete, complete HTTP request and response examples demonstrating both dynamic registration patterns.
+Below is a concrete, complete HTTP request and response example demonstrating **Explicit Client Registration (`POST /register`)**.
 
-### Example A: Automatic Client Registration (Zero-Touch Model)
+> [!NOTE]
+> **Automatic Registration Out of Scope**: OpenID Federation 1.0 supports stateless Automatic Registration during token requests; however, for the current version of this specification, implementers **SHALL** use the Explicit Client Registration pattern below.
 
-In Automatic Registration, the client application executes **no `POST /register` call** and **no browser redirect**. It presents its `trust_chain` directly inline during Token Exchange (`RFC 8693`) at `/token`.
+### Explicit Client Registration Request (`POST /register`)
 
-#### Token Request (`POST /token`) via Direct Token Exchange with `trust_chain` & `client_assertion`
-The application exchanges a user assertion or subject token directly at the Data Holder's `/token` endpoint using OAuth 2.0 Token Exchange (`RFC 8693`), supplying the 3-tier inline `trust_chain` and proof-of-possession `client_assertion`:
-
-```http
-POST /token HTTP/1.1
-Host: dataholder.example.org
-Content-Type: application/x-www-form-urlencoded
-
-grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange
-&subject_token=eyJhbGciOiJ...[Subject Token / User Assertion]
-&subject_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token
-&client_id=https%3A%2F%2Flibrary.medicare.gov%2Fapps%2Fbpbuddy
-&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer
-&client_assertion=eyJhbGciOiJFUzI1NiIs...[App Key Proof-of-Possession JWT]
-&trust_chain=%5B%22eyJhbGciOiJ...%5B0%3AApp_EC%5D%22%2C%22eyJhbGciOiJ...%5B1%3ANetwork_Delegated_Statement%5D%22%2C%22eyJhbGciOiJ...%5B2%3ACMS_Network_Statement%5D%22%5D
-```
-
-#### Data Holder Token Response (`HTTP 200 OK`)
-The Data Holder validates the `trust_chain`, caches the verified App JWK, and returns the OAuth token response:
-
-```http
-HTTP/1.1 200 OK
-Content-Type: application/json
-Cache-Control: no-store
-
-{
-  "access_token": "eyJhbGciOiJFUzI1NiIs...[Data Holder Issued FHIR Access Token]",
-  "token_type": "Bearer",
-  "expires_in": 3600,
-  "refresh_token": "rt_881923019",
-  "scope": "patient/*.rs openid fhirUser",
-  "patient": "p-109238"
-}
-```
-
----
-
-### Example B: Explicit Client Registration (Stateful RFC 7591 Model)
-
-In Explicit Registration, the client application registers once with `POST /register` to receive a persistent server-assigned `client_id`.
-
-#### Registration Request (`POST /register`)
-The application presents its linear 3-tier `trust_chain` to the Data Holder's `/register` endpoint:
+The application presents its linear 3-tier `trust_chain` and proof-of-possession `client_assertion` to the Data Holder's `/register` endpoint (RFC 7591):
 
 ```http
 POST /register HTTP/1.1
@@ -586,7 +530,8 @@ Content-Type: application/json
 }
 ```
 
-#### Data Holder Registration Response (`HTTP 201 Created`)
+### Data Holder Registration Response (`HTTP 201 Created`)
+
 The Data Holder validates the `trust_chain`, creates a persistent client record, and returns the registration output:
 
 ```http
@@ -650,9 +595,9 @@ Data Holders **SHALL** execute the following verification sequence upon receivin
    - Read `extensions.cms_app.status_list` in `trust_chain[1]`.
    - Verify bit index `4092` against local 60-minute cached RFC 9493 Bitstring Status List (`https://library.medicare.gov/.well-known/status-list.json`). Reject if bit `4092 == 1` (Revoked by CMS).
 
-8. **Registration / Cache Population**:
-   - **Automatic Registration Path**: Cache verified App JWK in local memory/cache for up to 24 hours. Respond with tokens.
-   - **Explicit Registration Path**: Save persistent client record in database. Respond with `HTTP 201 Created` and server-assigned `client_id`.
+8. **Client Registration & Record Creation**:
+   - Save persistent client record in database (`client_id`, verified `redirect_uris`, `scope`, verified App JWK).
+   - Respond with `HTTP 201 Created` containing server-assigned `client_id`.
 
 ---
 
@@ -682,7 +627,13 @@ OpenID Federation 1.0 supports seamless, zero-downtime key rotation across all t
 | **Trust Anchor** | CMS App Library JWKS URL | CMS OpenID Federation Trust Anchor (`https://library.cms.gov`) |
 | **Accreditation Proofs** | Single CMS Software Statement | **Sequential Delegation**: CMS App Base -> Network-Delegated Statement |
 | **App Public Key Host** | App-Hosted `jwks_uri` (or CMS Fallback) | **App-Hosted `jwks_uri`** (verified in `CMS_App_Statement`) |
-| **Registration Patterns** | Explicit `POST /register` | **Both Automatic (Stateless) & Explicit (Stateful)** |
+| **Registration Flow** | Explicit `POST /register` | **Explicit `POST /register`** (Automatic Registration Out of Scope) |
 | **Trust Chain Structure** | 1-Tier Flat Software Statement | **3-Tier Linear Chain** (`App -> Home Network -> CMS Anchor`) |
 | **PKI / ASN.1 Dependency** | None (JSON-native) | **None (100% JSON & JOSE Native)** |
+
+---
+
+> [!NOTE]
+> **TODO**: Outline conformance requirements for signaling via `.well-known` files that a Data Holder supports this dynamic registration workflow (e.g. `/.well-known/smart-configuration` updates).
+
 
